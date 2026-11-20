@@ -1,0 +1,19 @@
+{
+  "company": "NVIDIA Corporation",
+  "ticker": "NVDA",
+  "synthetic": true,
+  "excerpts": [
+    {
+      "source_id": "demo-results",
+      "title": "Synthetic demo data — hypothetical segment update",
+      "document_date": "2025-01-15",
+      "text": "Fictional training example, not an NVIDIA disclosure. In the hypothetical quarter, data center revenue rose 12% year over year. The illustrative update attributes growth to higher accelerator demand from cloud customers."
+    },
+    {
+      "source_id": "demo-risks",
+      "title": "Synthetic demo data — hypothetical operating risks",
+      "document_date": "2025-01-15",
+      "text": "Fictional training example, not an NVIDIA disclosure. The scenario identifies reliance on a limited pool of advanced packaging suppliers. It does not quantify the exposure or give a full-year margin outlook."
+    }
+  ]
+}

@@ -2,13 +2,18 @@
 
 AgentOps Lab is a portfolio project for multi-agent stock research on AWS. The goal is to let users follow how agents gather financial evidence, evaluate bullish and bearish arguments, and produce a sourced report. The same Python research logic is intended to run on Amazon Bedrock AgentCore Runtime and Amazon EKS.
 
-Phase 1 provides a local Python package, offline checks, and a Bedrock connectivity command using the Strands Agents SDK.
+The first milestone includes a Bedrock smoke command and a Research Agent that turns supplied financial excerpts into a cited brief. LangGraph runs the research workflow, LangChain's `ChatBedrockConverse` handles inference, and Pydantic validates inputs and outputs.
 
 ## Project layout
 
 ```text
 src/agentops_lab/          Python application package
+  bedrock.py              Bedrock model and structured-output configuration
   bedrock_smoke.py        Local AWS connectivity command
+  research.py             LangGraph workflow
+  research_models.py      Pydantic input and output schemas
+  research_cli.py         Local research command
+examples/                 Synthetic research input
 tests/                    Offline tests
 pyproject.toml            Package, dependencies, pytest, and Ruff configuration
 uv.lock                   Resolved dependencies for reproducible installs
@@ -42,4 +47,18 @@ uv run --locked --env-file .env agentops-bedrock-smoke
 
 The AWS identity needs `bedrock:InvokeModel` for the selected model. For cross-Region inference, grant it on the inference profile and the underlying foundation model in every destination Region. Any applicable service control policies must allow the invocation across those Regions. The selected model must be available to the account. [Bedrock inference permissions](https://docs.aws.amazon.com/bedrock/latest/userguide/inference-prereq.html) · [Inference profile permissions](https://docs.aws.amazon.com/bedrock/latest/userguide/inference-profiles-prereq.html)
 
-The command sends a short, non-streaming prompt with a 16-token output limit. The request may incur a small Bedrock charge. It logs a JSON event and exits with status `0` when Bedrock returns text or `1` on a configuration or inference failure. [Strands Bedrock provider](https://strandsagents.com/latest/documentation/docs/user-guide/concepts/model-providers/amazon-bedrock/)
+The command sends a short, non-streaming prompt with a 16-token output limit. A live request incurs Bedrock usage. It logs a JSON event and exits with status `0` when Bedrock returns text or `1` on a configuration or inference failure. [LangChain Bedrock integration](https://docs.langchain.com/oss/python/integrations/chat/bedrock)
+
+## Local research
+
+From the repository root, run the bundled NVDA demo with the same AWS configuration:
+
+```sh
+uv run --locked --env-file .env agentops-research --ticker NVDA
+```
+
+The bundled excerpts are fictional and the output is marked `"synthetic": true`. To supply your own excerpts, use `--input path/to/request.json`. The JSON file contains `company`, `ticker`, and `excerpts`. Each excerpt needs a unique `source_id`, `title`, ISO `document_date`, and `text`. Set `url` when available and `synthetic` on the request when using fictional data. If you pass `--ticker`, it must match the input ticker. The command writes the validated brief as JSON to stdout.
+
+The workflow runs `START → research → END`. The research node receives a typed request, passes the supplied text to the model, and validates a structured analysis. Each finding, opportunity, and risk must cite at least one existing source ID. The application copies the cited source metadata from the request and preserves the given company and ticker. If there are no excerpts, the node returns an insufficient-evidence brief without model inference. Citation checks verify that each ID exists in the input. Whether the excerpt supports the wording of a claim still requires review. [LangGraph Graph API](https://docs.langchain.com/oss/python/langgraph/graph-api)
+
+The default output mode uses LangChain's tool-based structured output, which works with Nova Micro through Converse. Nova Micro does not support Bedrock's native JSON-schema output. For models without compatible tool calling, add `--output-mode json` to request a plain JSON object and validate it with Pydantic. Both modes use the configured model, make at most one inference call, and cap the output at 768 tokens. Invalid output fails the command. [Nova Micro capabilities](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-micro.html) · [Nova tool choice](https://docs.aws.amazon.com/nova/latest/userguide/tool-choice.html)

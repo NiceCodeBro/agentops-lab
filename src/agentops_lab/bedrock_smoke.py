@@ -1,46 +1,15 @@
-"""Run a short text inference through Strands and Amazon Bedrock."""
+"""Run a short text inference through LangChain and Amazon Bedrock."""
 
 import argparse
 import json
 import logging
-import os
 
-import boto3
-from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
-from strands import Agent
-from strands.models import BedrockModel
-from strands.types.exceptions import (
-    ContextWindowOverflowException,
-    MaxTokensReachedException,
-    ModelThrottledException,
-)
+from langchain_core.messages import HumanMessage, SystemMessage
+
+from agentops_lab.bedrock import load_bedrock_model
 
 logger = logging.getLogger(__name__)
-
-
-def check_bedrock(session: boto3.Session, model_id: str) -> None:
-    model = BedrockModel(
-        boto_session=session,
-        boto_client_config=Config(
-            connect_timeout=5,
-            read_timeout=30,
-            retries={"mode": "standard", "total_max_attempts": 1},
-        ),
-        model_id=model_id,
-        max_tokens=16,
-        temperature=0,
-        streaming=False,
-    )
-    agent = Agent(
-        model=model,
-        callback_handler=None,
-        retry_strategy=None,
-        system_prompt="Reply briefly with plain text.",
-    )
-    result = agent("Reply with OK.")
-    if not any(block.get("text", "").strip() for block in result.message["content"]):
-        raise RuntimeError("Bedrock returned no text.")
 
 
 def main() -> int:
@@ -48,28 +17,15 @@ def main() -> int:
     parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
-    model_id = os.getenv("BEDROCK_MODEL_ID", "").strip()
-    if not model_id:
-        logger.error(
-            json.dumps({"event": "bedrock_smoke_failed", "error": "Set BEDROCK_MODEL_ID."})
-        )
-        return 1
-
-    context = {"model_id": model_id}
+    context = {}
     try:
-        session = boto3.Session(region_name=os.getenv("AWS_REGION") or None)
-        if not session.region_name:
-            raise RuntimeError("Set AWS_REGION or configure a region in your AWS profile.")
-        context["region"] = session.region_name
-        check_bedrock(session, model_id)
-    except (
-        BotoCoreError,
-        ClientError,
-        ContextWindowOverflowException,
-        MaxTokensReachedException,
-        ModelThrottledException,
-        RuntimeError,
-    ) as error:
+        model = load_bedrock_model(max_tokens=16)
+        context = {"model_id": model.model_id, "region": model.region_name}
+        messages = [SystemMessage("Reply briefly with plain text."), HumanMessage("Reply with OK.")]
+        response = model.invoke(messages)
+        if not response.text.strip():
+            raise ValueError("Bedrock returned no text.")
+    except (BotoCoreError, ClientError, ValueError) as error:
         logger.error(json.dumps({"event": "bedrock_smoke_failed", **context, "error": str(error)}))
         return 1
 
