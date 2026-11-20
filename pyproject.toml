@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agentops-lab"
+version = "0.1.0"
+description = "A multi-agent research platform, starting with local Bedrock connectivity."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "boto3>=1.40,<2",
+    "botocore>=1.40,<2",
+    "strands-agents>=1.65,<2",
+]
+
+[project.scripts]
+agentops-bedrock-smoke = "agentops_lab.bedrock_smoke:main"
+
+[dependency-groups]
+dev = ["pytest>=8,<10", "ruff>=0.11,<1"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--strict-config --strict-markers"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = [".uv-cache"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
