@@ -89,7 +89,7 @@ With Python dependencies installed, check the SEC download and parsing without A
 uv run --locked --env-file .env agentops-ingest-sec --dry-run
 ```
 
-Live use requires an existing private S3 Standard source bucket, a private S3 vector bucket, and a cosine vector index in the AWS Region. Set `SEC_SOURCE_BUCKET`, `S3_VECTOR_BUCKET`, and `S3_VECTOR_INDEX` in `.env`. The index dimension must match `SEC_EMBEDDING_DIMENSIONS`, which defaults to 256. Titan supports 256, 512, and 1,024 dimensions. Both ingestion and queries verify the index before embedding. [Titan embedding parameters](https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-titan-embed-text.html) · [S3 Vectors indexes](https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-vectors-indexes.html)
+Live use requires an existing private S3 Standard source bucket, a private S3 vector bucket, and a cosine vector index in the AWS Region. Use the Terraform environment below to manage those resources. Set `SEC_SOURCE_BUCKET`, `S3_VECTOR_BUCKET`, and `S3_VECTOR_INDEX` in `.env` from its outputs. The index dimension must match `SEC_EMBEDDING_DIMENSIONS`, which defaults to 256. Both ingestion and queries verify the index before embedding. [Titan embedding parameters](https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-titan-embed-text.html) · [S3 Vectors indexes](https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-vectors-indexes.html)
 
 - The ingestion identity needs `s3vectors:GetIndex`, `s3vectors:PutVectors`, `s3:PutObject`, `s3:GetObject`, and `bedrock:InvokeModel` for Titan.
 - The retrieval identity needs `s3vectors:GetIndex`, `s3vectors:QueryVectors`, `s3vectors:GetVectors` for filtered results and metadata, `s3:GetObject`, and `bedrock:InvokeModel` for Titan and the configured reasoning profile and its destination models. [S3 Vectors access management](https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-vectors-access-management.html) · [Bedrock inference profile permissions](https://docs.aws.amazon.com/bedrock/latest/userguide/inference-profiles-prereq.html)
@@ -105,3 +105,31 @@ SEC research defaults to the Nova Pro EU profile when `BEDROCK_MODEL_ID` is unse
 Ingestion extracts narrative from Business, Risk Factors, and MD&A. It strips HTML layout, hidden XBRL, and tables. The source bucket holds complete extracted chunks and their provenance. The index holds embeddings, stable keys, and small filterable metadata fields. Reingesting an identical corpus upserts the same keys. A changed corpus at the same accession is rejected so it cannot mix with previously indexed chunks.
 
 The research command makes three fixed semantic queries filtered to NVDA, drops distant and off-topic hits, and passes up to six unique chunks to the existing LangGraph agent. `SEC_MAX_DISTANCE` controls the cosine-distance cutoff and defaults to `0.70`. A report's cited sources include the filing date, SEC URL, accession number, section, and chunk number. If retrieval supplies no usable evidence, the graph returns an insufficient-evidence brief without invoking the reasoning model. The smoke test checks topic and section matches, and citation validation checks source IDs. Evaluate the wording of each financial claim against the actual chunk text.
+
+### Terraform setup and lifecycle
+
+The [dev environment](infra/terraform/environments/dev/) uses the official HashiCorp AWS provider and is scoped to `eu-central-1`. It manages one S3 source bucket with all four public access blocks and SSE-S3, plus one S3 vector bucket and its 256-dimensional cosine index. Vector buckets always block public access and the index inherits SSE-S3 from its bucket. Terraform uses local state for this sandbox. Keep the state, saved plans, and actual variable values private. Keep `.terraform.lock.hcl` in Git. [Vector bucket access](https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-vectors.html) · [Vector encryption](https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-vectors-data-encryption.html)
+
+From the repository root, configure the sandbox account and names:
+
+```sh
+cd infra/terraform/environments/dev
+cp terraform.tfvars.example terraform.tfvars
+export AWS_PROFILE=your-sandbox-sso-profile
+aws sso login --profile "$AWS_PROFILE"
+aws sts get-caller-identity --region eu-central-1 --query Account --output text
+```
+
+Compare the STS result with the expected sandbox account before writing it to `terraform.tfvars`. Terraform's `allowed_account_ids` check enforces that account during planning and apply. With a current AWS CLI, check the exact source bucket using `aws s3api head-bucket` with `--expected-bucket-owner`, and the vector bucket and index using `aws s3vectors get-vector-bucket` and `get-index`, all against `eu-central-1`. Investigate permission errors before proceeding. If any pilot resource already exists and is unmanaged, import it into this state using its existing name or ARN. Check for an owning Terraform state before importing. [AWS provider account guard](https://registry.terraform.io/providers/hashicorp/aws/latest/docs) · [Terraform import](https://developer.hashicorp.com/terraform/cli/commands/import)
+
+Initialize the locked provider, then validate and review a saved plan:
+
+```sh
+terraform init -lockfile=readonly
+terraform fmt -check
+terraform validate
+terraform plan -out=sec-dev.tfplan
+terraform show sec-dev.tfplan
+```
+
+Apply only after explicit deployment approval, using `terraform apply sec-dev.tfplan`. Review a fresh plan if the configuration or state has changed. After apply, run `terraform output -json ingestion_environment` and copy the values into the Python project's `.env`. The Python commands read these identifiers and manage filing data only. Before any approved teardown, review `terraform plan -destroy` and preserve needed evidence. Deleting the vector index deletes its vectors.

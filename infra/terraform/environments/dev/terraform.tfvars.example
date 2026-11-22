@@ -1,0 +1,10 @@
+# Copy to terraform.tfvars and use your independently verified sandbox account ID.
+aws_account_id = "your-sandbox-account-id"
+
+# Optional when AWS_PROFILE already names your sandbox SSO profile.
+# aws_profile = "your-sandbox-sso-profile"
+
+# Replace the suffix if your source bucket name is already taken.
+source_bucket_name = "agentops-lab-sec-source-nvda-c74a"
+vector_bucket_name = "agentops-lab-sec-vectors-nvda-c74a"
+vector_index_name  = "nvda-10k-v1"

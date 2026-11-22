@@ -36,3 +36,13 @@ id_ed25519
 *.key
 *.p12
 *.pfx
+
+# Terraform runtime files. Keep .terraform.lock.hcl and *.tfvars.example tracked.
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+*.tfplan
+crash.log
+crash.*.log
