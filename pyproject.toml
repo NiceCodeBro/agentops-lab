@@ -9,18 +9,21 @@ description = "A multi-agent research platform, starting with local Bedrock conn
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "beautifulsoup4>=4.13,<5",
     "boto3>=1.40,<2",
     "botocore>=1.40,<2",
     "langchain-aws>=1,<2",
     "langchain-core>=1,<2",
     "langgraph>=1,<2",
-    "pydantic>=2,<3",
+    "pydantic>=2.12,<3",
 ]
 
 [project.scripts]
 agentops-bedrock-smoke = "agentops_lab.bedrock_smoke:main"
 agentops-research = "agentops_lab.research_cli:main"
 agentops-evaluate = "agentops_lab.evaluation:main"
+agentops-ingest-sec = "agentops_lab.sec_cli:ingest"
+agentops-sec-smoke = "agentops_lab.sec_cli:smoke"
 
 [dependency-groups]
 dev = ["pytest>=8,<10", "ruff>=0.11,<1"]

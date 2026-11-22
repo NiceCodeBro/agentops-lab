@@ -12,8 +12,8 @@ from langchain_core.runnables import Runnable, RunnableLambda
 from pydantic import BaseModel
 
 
-def load_bedrock_model(*, max_tokens: int) -> ChatBedrockConverse:
-    model_id = os.getenv("BEDROCK_MODEL_ID", "").strip()
+def load_bedrock_model(*, max_tokens: int, default_model_id: str = "") -> ChatBedrockConverse:
+    model_id = os.getenv("BEDROCK_MODEL_ID", "").strip() or default_model_id
     if not model_id:
         raise ValueError("Set BEDROCK_MODEL_ID.")
 

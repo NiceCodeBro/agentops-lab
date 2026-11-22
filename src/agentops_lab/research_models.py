@@ -1,11 +1,22 @@
 """Inputs and outputs for evidence-based company research."""
 
 from datetime import date
-from typing import Annotated, Self
+from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, StringConstraints, model_validator
 
 type NonEmptyText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+
+
+# Identifies the filing and position of an excerpt selected by SEC retrieval.
+class FilingProvenance(BaseModel):
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+
+    ticker: NonEmptyText
+    accession_number: NonEmptyText
+    document_type: Literal["10-K"]
+    section: NonEmptyText
+    chunk_number: int = Field(gt=0)
 
 
 # Identifies a source in the final brief by ID, title, date, and optional URL.
@@ -16,6 +27,7 @@ class SourceReference(BaseModel):
     title: NonEmptyText
     document_date: date
     url: HttpUrl | None = None
+    filing: FilingProvenance | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 # Adds the actual evidence text to the source metadata for the research input.

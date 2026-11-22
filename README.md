@@ -2,7 +2,7 @@
 
 AgentOps Lab is a portfolio project for multi-agent stock research on AWS. The goal is to let users follow how agents gather financial evidence, evaluate bullish and bearish arguments, and produce a sourced report. The same Python research logic is intended to run on Amazon Bedrock AgentCore Runtime and Amazon EKS.
 
-The first milestone includes a Bedrock smoke command and a Research Agent that turns supplied financial excerpts into a cited brief. LangGraph runs the research workflow, LangChain's `ChatBedrockConverse` handles inference, and Pydantic validates inputs and outputs.
+The Research Agent turns supplied financial excerpts or retrieved SEC filing excerpts into a cited brief. LangGraph runs the research workflow, LangChain's `ChatBedrockConverse` handles inference, and Pydantic validates inputs and outputs.
 
 ## Project layout
 
@@ -13,6 +13,10 @@ src/agentops_lab/          Python application package
   research.py             LangGraph workflow
   research_models.py      Pydantic input and output schemas
   research_cli.py         Local research command
+  sec.py                  SEC discovery, primary HTML parsing, and chunking
+  filing_store.py         Titan embeddings, S3 source storage, and S3 Vectors retrieval
+  sec_research.py         Build a research request from SEC search results
+  sec_cli.py              Manual ingestion and retrieval smoke commands
 examples/                 Synthetic research input
 tests/                    Offline tests
 pyproject.toml            Package, dependencies, pytest, and Ruff configuration
@@ -74,3 +78,30 @@ uv run --locked --env-file .env agentops-evaluate --case nvda-supplier-risk --ca
 ```
 
 The report shows which expected topics matched, the actual claims and citations, citation ID errors, and gaps or claims to review. Coverage uses case-specific phrase matching. A fact listed as missing is flagged when it matches a topic the fixture marks as disclosed. Numbers absent from cited text, unexpected topics, and unexpected sources also generate review flags. Paraphrases, qualifications, and misleading claims containing the expected words can evade these checks. Read claims against their cited excerpts to judge factual support. The command returns a nonzero exit status for agent failures or citation ID errors. Coverage misses and review flags are diagnostic.
+
+## NVIDIA SEC retrieval pilot
+
+The pilot uses NVIDIA's Form 10-K filed February 25, 2026, accession `0001045810-26-000021`, covering the fiscal year ended January 25, 2026. The ingestion command discovers that accession in NVIDIA's EDGAR submissions and downloads the primary filing. Set `SEC_USER_AGENT` in your environment to your organization or project name and an administrative contact email. The command waits at least one second between requests and retries transient failures with backoff. If EDGAR denies the client, you can pass a locally saved copy of the primary filing with `--html path/to/nvda-20260125.htm`. The command checks the copy's inline XBRL issuer, form, and reporting period. [SEC filing detail](https://www.sec.gov/Archives/edgar/data/1045810/000104581026000021/0001045810-26-000021-index.htm) · [SEC fair access guidance](https://www.sec.gov/about/webmaster-frequently-asked-questions)
+
+With Python dependencies installed, check the SEC download and parsing without AWS writes:
+
+```sh
+uv run --locked --env-file .env agentops-ingest-sec --dry-run
+```
+
+Live use requires an existing private S3 Standard source bucket, a private S3 vector bucket, and a cosine vector index in the AWS Region. Set `SEC_SOURCE_BUCKET`, `S3_VECTOR_BUCKET`, and `S3_VECTOR_INDEX` in `.env`. The index dimension must match `SEC_EMBEDDING_DIMENSIONS`, which defaults to 256. Titan supports 256, 512, and 1,024 dimensions. Both ingestion and queries verify the index before embedding. [Titan embedding parameters](https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-titan-embed-text.html) · [S3 Vectors indexes](https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-vectors-indexes.html)
+
+- The ingestion identity needs `s3vectors:GetIndex`, `s3vectors:PutVectors`, `s3:PutObject`, `s3:GetObject`, and `bedrock:InvokeModel` for Titan.
+- The retrieval identity needs `s3vectors:GetIndex`, `s3vectors:QueryVectors`, `s3vectors:GetVectors` for filtered results and metadata, `s3:GetObject`, and `bedrock:InvokeModel` for Titan and the configured reasoning profile and its destination models. [S3 Vectors access management](https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-vectors-access-management.html) · [Bedrock inference profile permissions](https://docs.aws.amazon.com/bedrock/latest/userguide/inference-profiles-prereq.html)
+
+```sh
+uv run --locked --env-file .env agentops-ingest-sec
+uv run --locked --env-file .env agentops-sec-smoke --show-text
+uv run --locked --env-file .env agentops-research --sec --ticker NVDA
+```
+
+SEC research defaults to the Nova Pro EU profile when `BEDROCK_MODEL_ID` is unset. An existing value overrides the default. You can set `BEDROCK_MODEL_ID=eu.amazon.nova-pro-v1:0` explicitly for the pilot. Research with `--input` and the synthetic demo continue to use the configured model.
+
+Ingestion extracts narrative from Business, Risk Factors, and MD&A. It strips HTML layout, hidden XBRL, and tables. The source bucket holds complete extracted chunks and their provenance. The index holds embeddings, stable keys, and small filterable metadata fields. Reingesting an identical corpus upserts the same keys. A changed corpus at the same accession is rejected so it cannot mix with previously indexed chunks.
+
+The research command makes three fixed semantic queries filtered to NVDA, drops distant and off-topic hits, and passes up to six unique chunks to the existing LangGraph agent. `SEC_MAX_DISTANCE` controls the cosine-distance cutoff and defaults to `0.70`. A report's cited sources include the filing date, SEC URL, accession number, section, and chunk number. If retrieval supplies no usable evidence, the graph returns an insufficient-evidence brief without invoking the reasoning model. The smoke test checks topic and section matches, and citation validation checks source IDs. Evaluate the wording of each financial claim against the actual chunk text.
