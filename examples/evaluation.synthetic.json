@@ -1,0 +1,176 @@
+[
+  {
+    "id": "nvda-supplier-risk",
+    "request": {
+      "company": "NVIDIA Corporation",
+      "ticker": "NVDA",
+      "synthetic": true,
+      "excerpts": [
+        {
+          "source_id": "demo-results",
+          "title": "Synthetic demo data — hypothetical segment update",
+          "document_date": "2025-01-15",
+          "text": "Fictional training example, not an NVIDIA disclosure. In the hypothetical quarter, data center revenue rose 12% year over year. The illustrative update attributes growth to higher accelerator demand from cloud customers."
+        },
+        {
+          "source_id": "demo-risks",
+          "title": "Synthetic demo data — hypothetical operating risks",
+          "document_date": "2025-01-15",
+          "text": "Fictional training example, not an NVIDIA disclosure. The scenario identifies reliance on a limited pool of advanced packaging suppliers. It does not quantify the exposure or give a full-year margin outlook."
+        }
+      ]
+    },
+    "key_findings": [
+      {"description": "Hypothetical data center revenue grew 12%", "phrases": [["data center revenue"], ["12", "twelve percent"]], "source_ids": ["demo-results"]},
+      {"description": "Cloud accelerator demand was identified as a growth driver", "phrases": [["cloud"], ["accelerator", "accelerators"], ["demand"]], "source_ids": ["demo-results"]}
+    ],
+    "risks": [
+      {"description": "Reliance on a limited pool of advanced packaging suppliers", "phrases": [["packaging"], ["supplier", "suppliers", "supply"], ["limited", "concentration", "concentrated", "reliance", "dependency", "dependence"]], "source_ids": ["demo-risks"]}
+    ],
+    "opportunities": [
+      {"description": "Cloud accelerator demand could support future growth", "phrases": [["cloud"], ["accelerator", "accelerators"], ["demand"]], "source_ids": ["demo-results"]}
+    ],
+    "disclosed": [
+      {"description": "The excerpt attributes growth to cloud accelerator demand", "phrases": [["growth driver", "growth drivers", "drivers of growth", "drivers of the growth", "drivers of revenue growth", "causes of growth"]], "source_ids": ["demo-results"]},
+      {"description": "The excerpt gives a 12% year-over-year growth rate, although it gives no absolute revenue figure", "phrases": [["revenue growth", "growth rate"], ["values and units", "percentage", "growth rate"]], "source_ids": ["demo-results"]}
+    ],
+    "known_gaps": ["margin outlook"]
+  },
+  {
+    "id": "margin-guidance",
+    "request": {
+      "company": "Fictional Aurora Components",
+      "ticker": "AURA-DEMO",
+      "synthetic": true,
+      "excerpts": [
+        {
+          "source_id": "aurora-outlook",
+          "title": "Synthetic excerpt — guidance",
+          "document_date": "2025-02-01",
+          "text": "Management issued full-year operating margin guidance of 9% to 11%. A new service offering is in pilot and management said it could increase recurring revenue. No bookings forecast was issued."
+        },
+        {
+          "source_id": "aurora-channels",
+          "title": "Synthetic excerpt — channels",
+          "document_date": "2025-02-01",
+          "text": "One distributor accounted for 40% of annual sales, which exposes the company to disruption if that relationship ends."
+        }
+      ]
+    },
+    "key_findings": [
+      {"description": "Full-year operating margin guidance was 9% to 11%", "phrases": [["margin"], ["9"], ["11"]], "source_ids": ["aurora-outlook"]}
+    ],
+    "risks": [
+      {"description": "Sales were concentrated in one distributor", "phrases": [["distributor"], ["40", "concentration", "concentrated", "dependence", "dependency", "reliance"]], "source_ids": ["aurora-channels"]}
+    ],
+    "opportunities": [
+      {"description": "The service pilot could increase recurring revenue", "phrases": [["pilot", "service"], ["recurring revenue"]], "source_ids": ["aurora-outlook"]}
+    ],
+    "disclosed": [
+      {"description": "Full-year operating margin guidance is stated as 9% to 11%", "phrases": [["margin"], ["guidance", "outlook", "full year"]], "source_ids": ["aurora-outlook"]}
+    ],
+    "known_gaps": ["bookings forecast"]
+  },
+  {
+    "id": "liquidity-pressure",
+    "request": {
+      "company": "Fictional Harbor Automation",
+      "ticker": "HARB-DEMO",
+      "synthetic": true,
+      "excerpts": [
+        {
+          "source_id": "harbor-cash",
+          "title": "Synthetic excerpt — cash and debt",
+          "document_date": "2025-03-01",
+          "text": "Quarter-end cash was $40 million. The company has $65 million of debt maturing in the next six months. Management warns this creates refinancing risk."
+        },
+        {
+          "source_id": "harbor-asset",
+          "title": "Synthetic excerpt — property sale",
+          "document_date": "2025-03-01",
+          "text": "Management is marketing an idle warehouse for sale. A sale could improve liquidity if it closes. No sale price or closing date has been agreed."
+        }
+      ]
+    },
+    "key_findings": [
+      {"description": "Quarter-end cash was $40 million", "phrases": [["cash"], ["40"]], "source_ids": ["harbor-cash"]}
+    ],
+    "risks": [
+      {"description": "Near-term debt maturity creates refinancing risk", "phrases": [["debt", "maturity", "maturing", "refinancing"], ["65", "refinancing", "liquidity", "six months", "6 months"]], "source_ids": ["harbor-cash"]}
+    ],
+    "opportunities": [
+      {"description": "A warehouse sale could improve liquidity if completed", "phrases": [["warehouse"], ["sale"], ["liquidity", "cash", "proceeds"]], "source_ids": ["harbor-asset"]}
+    ],
+    "disclosed": [
+      {"description": "The cash balance is explicitly stated", "phrases": [["cash balance", "cash position", "cash reserves", "quarter end cash"]], "source_ids": ["harbor-cash"]}
+    ]
+  },
+  {
+    "id": "conditional-contract",
+    "request": {
+      "company": "Fictional Cedar Grid",
+      "ticker": "CEDAR-DEMO",
+      "synthetic": true,
+      "excerpts": [
+        {
+          "source_id": "cedar-letter",
+          "title": "Synthetic excerpt — letter of intent",
+          "document_date": "2025-04-01",
+          "text": "A utility signed a nonbinding letter of intent for 200 units. A final contract could open the municipal utility market."
+        },
+        {
+          "source_id": "cedar-conditions",
+          "title": "Synthetic excerpt — conditions",
+          "document_date": "2025-04-02",
+          "text": "The prospective utility order requires regulatory approval. A delay or denial could postpone or prevent the order. No binding contract has been signed."
+        }
+      ]
+    },
+    "key_findings": [
+      {"description": "The 200-unit letter of intent is nonbinding", "phrases": [["200"], ["nonbinding", "non binding"]], "source_ids": ["cedar-letter"]}
+    ],
+    "risks": [
+      {"description": "Regulatory approval could delay or prevent the order", "phrases": [["regulatory approval", "regulator"], ["delay", "delayed", "denied", "denial", "postpone", "prevent", "contingent", "approval risk"]], "source_ids": ["cedar-conditions"]}
+    ],
+    "opportunities": [
+      {"description": "A final contract could open the municipal utility market", "phrases": [["municipal"], ["utility", "utilities"], ["market", "expansion", "access"]], "source_ids": ["cedar-letter"]}
+    ],
+    "disclosed": [
+      {"description": "Regulatory approval is explicitly identified as a condition", "phrases": [["approval requirement", "requirements for approval", "requires regulatory approval", "whether regulatory approval is required"]], "source_ids": ["cedar-conditions"]}
+    ]
+  },
+  {
+    "id": "subscriber-retention",
+    "request": {
+      "company": "Fictional Meridian Software",
+      "ticker": "MERI-DEMO",
+      "synthetic": true,
+      "excerpts": [
+        {
+          "source_id": "meridian-metrics",
+          "title": "Synthetic excerpt — subscriber metrics",
+          "document_date": "2025-05-01",
+          "text": "Annual subscriber churn increased from 4% to 7%. Management said continued churn at that level could pressure recurring revenue."
+        },
+        {
+          "source_id": "meridian-pilot",
+          "title": "Synthetic excerpt — pilot",
+          "document_date": "2025-05-01",
+          "text": "The company began an onboarding pilot intended to improve subscriber retention. Results are not yet available."
+        }
+      ]
+    },
+    "key_findings": [
+      {"description": "Annual churn rose from 4% to 7%", "phrases": [["churn"], ["4"], ["7"]], "source_ids": ["meridian-metrics"]}
+    ],
+    "risks": [
+      {"description": "Continued churn could pressure recurring revenue", "phrases": [["churn"], ["recurring revenue", "subscription revenue"]], "source_ids": ["meridian-metrics"]}
+    ],
+    "opportunities": [
+      {"description": "The onboarding pilot could improve retention", "phrases": [["onboarding", "pilot"], ["retention"]], "source_ids": ["meridian-pilot"]}
+    ],
+    "disclosed": [
+      {"description": "The annual churn rate is disclosed", "phrases": [["annual churn rate", "subscriber churn rate", "subscriber churn percentage"]], "source_ids": ["meridian-metrics"]}
+    ]
+  }
+]

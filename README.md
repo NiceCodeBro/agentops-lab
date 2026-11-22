@@ -62,3 +62,15 @@ The bundled excerpts are fictional and the output is marked `"synthetic": true`.
 The workflow runs `START → research → END`. The research node receives a typed request, passes the supplied text to the model, and validates a structured analysis. Each finding, opportunity, and risk must cite at least one existing source ID. The application copies the cited source metadata from the request and preserves the given company and ticker. If there are no excerpts, the node returns an insufficient-evidence brief without model inference. Citation checks verify that each ID exists in the input. Whether the excerpt supports the wording of a claim still requires review. [LangGraph Graph API](https://docs.langchain.com/oss/python/langgraph/graph-api)
 
 The default output mode uses LangChain's tool-based structured output, which works with Nova Micro through Converse. Nova Micro does not support Bedrock's native JSON-schema output. For models without compatible tool calling, add `--output-mode json` to request a plain JSON object and validate it with Pydantic. Both modes use the configured model, make at most one inference call, and cap the output at 768 tokens. Invalid output fails the command. [Nova Micro capabilities](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-micro.html) · [Nova tool choice](https://docs.aws.amazon.com/nova/latest/userguide/tool-choice.html)
+
+## Research quality evaluation
+
+The five cases in `examples/evaluation.synthetic.json` are fictional. Each records expected findings, risks, opportunities, and the source IDs that support them. Some cases also record facts that the agent could incorrectly report as missing, and gaps it should surface.
+
+Run `uv run --locked pytest` for deterministic offline checks. To run the evaluation with Bedrock, use the same AWS configuration as the research CLI. The evaluator makes one model call per selected case and runs all five cases by default.
+
+```sh
+uv run --locked --env-file .env agentops-evaluate --case nvda-supplier-risk --case margin-guidance
+```
+
+The report shows which expected topics matched, the actual claims and citations, citation ID errors, and gaps or claims to review. Coverage uses case-specific phrase matching. A fact listed as missing is flagged when it matches a topic the fixture marks as disclosed. Numbers absent from cited text, unexpected topics, and unexpected sources also generate review flags. Paraphrases, qualifications, and misleading claims containing the expected words can evade these checks. Read claims against their cited excerpts to judge factual support. The command returns a nonzero exit status for agent failures or citation ID errors. Coverage misses and review flags are diagnostic.
