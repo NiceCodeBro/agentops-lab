@@ -8,9 +8,9 @@ from pathlib import Path
 from botocore.exceptions import BotoCoreError, ClientError
 from langchain_core.exceptions import OutputParserException
 
-from agentops_lab.bedrock import load_bedrock_model, research_model
+from agentops_lab.bedrock import build_structured_model, load_bedrock_model
 from agentops_lab.research import build_research_graph
-from agentops_lab.research_models import ResearchRequest
+from agentops_lab.research_models import ResearchAnalysis, ResearchRequest
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ def main() -> int:
             raise ValueError("--ticker does not match the ticker in the input file.")
 
         model = load_bedrock_model(max_tokens=768)
-        analyze = research_model(model, output_mode=args.output_mode)
+        analyze = build_structured_model(model, ResearchAnalysis, output_mode=args.output_mode)
         graph = build_research_graph(analyze)
         result = graph.invoke({"request": request})
     except OutputParserException:
