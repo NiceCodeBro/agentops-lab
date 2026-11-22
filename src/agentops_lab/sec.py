@@ -167,7 +167,7 @@ def verify_pilot_html(html: bytes) -> None:
     }
     cik = fields.get("dei:entitycentralindexkey", "").zfill(10)
     document_type = fields.get("dei:documenttype", "")
-    period = fields.get("dei:documentperiodenddate", "")
+    period = re.sub(r"\s+,", ",", fields.get("dei:documentperiodenddate", ""))
     expected_periods = {
         PILOT_REPORT_DATE.isoformat(),
         PILOT_REPORT_DATE.strftime("%B %d, %Y"),

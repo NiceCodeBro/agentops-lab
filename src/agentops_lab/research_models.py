@@ -60,6 +60,14 @@ class CitedClaim(BaseModel):
     source_ids: list[NonEmptyText] = Field(min_length=1, description="Supporting input source IDs.")
 
 
+# A potential opportunity must be anchored to a passage in its cited evidence.
+class Opportunity(CitedClaim):
+    evidence_quote: NonEmptyText | None = Field(
+        default=None,
+        description="A verbatim passage from a cited excerpt that directly supports the inference.",
+    )
+
+
 # Defines the structured response that the Bedrock model is asked to produce.
 class ResearchAnalysis(BaseModel):
     """Evidence-based findings and gaps from supplied financial excerpts."""
@@ -69,8 +77,8 @@ class ResearchAnalysis(BaseModel):
     key_findings: list[CitedClaim] = Field(
         description="Material reported results and business drivers stated in the excerpts."
     )
-    opportunities: list[CitedClaim] = Field(
-        description="Potential sources of growth inferred from specific evidence."
+    opportunities: list[Opportunity] = Field(
+        description="Conditional opportunities directly grounded in a cited verbatim passage."
     )
     risks: list[CitedClaim] = Field(
         description="Business or investment exposures explicitly stated or supported by evidence."
@@ -86,3 +94,4 @@ class ResearchBrief(ResearchAnalysis):
     ticker: NonEmptyText
     synthetic: bool
     sources: list[SourceReference]
+    review_notes: list[str] = Field(default_factory=list, exclude_if=lambda notes: not notes)

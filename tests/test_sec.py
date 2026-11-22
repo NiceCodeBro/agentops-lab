@@ -12,7 +12,9 @@ from agentops_lab import sec
 HTML = b"""<html><body>
 <ix:header><ix:hidden>
   <ix:nonNumeric name="dei:EntityCentralIndexKey">0001045810</ix:nonNumeric>
-  <ix:nonNumeric name="dei:DocumentPeriodEndDate">January 25, 2026</ix:nonNumeric>
+  <ix:nonNumeric name="dei:DocumentPeriodEndDate">
+    January&nbsp;25 <span>,</span> 2026
+  </ix:nonNumeric>
   <p>Hidden XBRL noise.</p>
 </ix:hidden></ix:header>
 <ix:nonNumeric name="dei:DocumentType">10-K</ix:nonNumeric>

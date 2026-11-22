@@ -1,6 +1,7 @@
 """Build the existing ResearchRequest from bounded, topical SEC retrieval."""
 
 from dataclasses import dataclass
+from itertools import zip_longest
 
 from agentops_lab.filing_store import FilingStore
 from agentops_lab.research_models import DocumentExcerpt, ResearchRequest
@@ -27,14 +28,26 @@ EVIDENCE_TOPICS = (
         ("segment", "revenue growth", "data center revenue", "compute & networking"),
     ),
     EvidenceTopic(
-        "Supply chain suppliers or customer concentration",
-        ("Business", "Risk Factors", "MD&A"),
-        ("supply chain", "supplier", "customer concentration", "customers accounted"),
+        "Supply chain constraints, manufacturing lead times, foundries and production capacity",
+        ("Business", "Risk Factors"),
+        ("supply chain", "supplier", "manufacturing lead times", "capacity commitments"),
     ),
     EvidenceTopic(
-        "Material business risks including export restrictions and competition",
+        "Customer concentration: share of revenue from individual direct and indirect customers",
+        ("Risk Factors", "MD&A"),
+        (
+            "concentration of revenue",
+            "revenue is concentrated",
+            "concentration of sales",
+            "customer concentration",
+            "sales to one direct customer",
+            "limited number of customers",
+        ),
+    ),
+    EvidenceTopic(
+        "Material export control risks: trade restrictions, product licensing and sanctions",
         ("Risk Factors",),
-        ("export", "competition", "competitive", "restriction"),
+        ("export controls", "export restrictions", "export license", "trade restrictions"),
     ),
 )
 
@@ -43,10 +56,17 @@ def build_sec_request(store: FilingStore, ticker: str) -> ResearchRequest:
     ticker = ticker.strip().upper()
     if ticker != TICKER:
         raise ValueError("The SEC pilot supports NVDA only.")
-    excerpts: dict[str, DocumentExcerpt] = {}
+    ranked_topics = []
     for topic in EVIDENCE_TOPICS:
         hits = store.search_filings(topic.query, ticker, top_k=3)
         matches = [hit.excerpt for hit in hits if topic.matches(hit.excerpt)]
-        for excerpt in matches[:2]:
+        ranked_topics.append(matches)
+
+    # Interleave topic ranks so a single query cannot crowd out another topic.
+    excerpts: dict[str, DocumentExcerpt] = {}
+    for rank in zip_longest(*ranked_topics):
+        for excerpt in rank:
+            if excerpt is None:
+                continue
             excerpts.setdefault(excerpt.source_id, excerpt)
-    return ResearchRequest(company=COMPANY, ticker=ticker, excerpts=list(excerpts.values()))
+    return ResearchRequest(company=COMPANY, ticker=ticker, excerpts=list(excerpts.values())[:6])

@@ -17,7 +17,11 @@ ANALYSIS = {
         {"text": "Hypothetical data center revenue grew 12% YoY.", "source_ids": ["demo-results"]}
     ],
     "opportunities": [
-        {"text": "Cloud accelerator demand could support growth.", "source_ids": ["demo-results"]}
+        {
+            "text": "Cloud accelerator demand could support growth.",
+            "source_ids": ["demo-results"],
+            "evidence_quote": "higher accelerator demand from cloud customers",
+        }
     ],
     "risks": [
         {"text": "Advanced packaging supply may be concentrated.", "source_ids": ["demo-risks"]}
@@ -112,6 +116,20 @@ def test_model_can_report_insufficient_evidence(request_with_evidence):
     )
     assert not result["brief"].sources
     assert "Insufficient evidence" in result["brief"].missing_information[0]
+
+
+def test_opportunity_requires_a_quote_in_its_cited_excerpt(request_with_evidence):
+    supported = ANALYSIS["opportunities"][0]
+    missing_quote = {"text": "A new contract was signed.", "source_ids": ["demo-results"]}
+    wrong_source = {**supported, "source_ids": ["demo-risks"]}
+    analysis = {**ANALYSIS, "opportunities": [missing_quote, wrong_source, supported]}
+    graph = build_research_graph(RunnableLambda(lambda messages: analysis))
+    brief = graph.invoke({"request": request_with_evidence})["brief"]
+
+    assert len(brief.opportunities) == 1
+    assert brief.opportunities[0].text.startswith("Potential opportunity:")
+    assert brief.opportunities[0].evidence_quote == supported["evidence_quote"]
+    assert brief.review_notes == ["Omitted 2 opportunities without a matching evidence quote."]
 
 
 @pytest.mark.parametrize(

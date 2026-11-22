@@ -16,7 +16,9 @@ from agentops_lab.sec_research import EVIDENCE_TOPICS, build_sec_request
 def make_filing_hits():
     sections = {
         "1": ["The two business segments sell different products."],
-        "1A": ["A supplier outage or export restrictions could disrupt operations."],
+        "1A": [
+            "Supplier outages, customer concentration, or export restrictions may disrupt sales."
+        ],
         "7": ["This paragraph discusses an unrelated list of office locations."],
     }
     excerpts = create_chunks(PILOT_FILING, sections)
@@ -26,7 +28,7 @@ def make_filing_hits():
 def test_sec_request_deduplicates_and_excludes_off_topic_hits():
     business, risk, irrelevant = make_filing_hits()
     store = Mock(spec=FilingStore)
-    store.search_filings.side_effect = [[business, irrelevant], [risk, irrelevant], [risk]]
+    store.search_filings.side_effect = [[business, irrelevant], [risk, irrelevant], [risk], [risk]]
 
     request = build_sec_request(store, " nvda ")
 
@@ -43,7 +45,7 @@ def test_sec_cli_runs_existing_research_graph_with_nova_pro_default(
 ):
     business, risk, irrelevant = make_filing_hits()
     store = Mock(spec=FilingStore)
-    store.search_filings.side_effect = [[business, irrelevant], [risk], [risk]]
+    store.search_filings.side_effect = [[business, irrelevant], [risk], [risk], [risk]]
     monkeypatch.setattr("agentops_lab.research_cli.load_filing_store", lambda: store)
     monkeypatch.delenv("BEDROCK_MODEL_ID")
     monkeypatch.setattr(sys, "argv", ["agentops-research", "--sec", "--ticker", "NVDA"])
@@ -105,11 +107,33 @@ def test_no_relevant_sec_matches_skips_reasoning():
 def test_smoke_flags_wrong_topic_in_expected_section(monkeypatch, capsys):
     business, risk, irrelevant = make_filing_hits()
     store = Mock(spec=FilingStore)
-    store.search_filings.side_effect = [[business], [irrelevant], [risk]]
+    store.search_filings.side_effect = [[business], [irrelevant], [risk], [risk]]
     monkeypatch.setattr("agentops_lab.sec_cli.load_filing_store", lambda: store)
     monkeypatch.setattr(sys, "argv", ["agentops-sec-smoke"])
 
     assert smoke() == 1
     output = capsys.readouterr().out
     assert "MISS | Supply chain" in output
-    assert "2/3 queries returned a topical excerpt" in output
+    assert "3/4 queries returned a topical excerpt" in output
+
+
+def test_interleaves_topic_ranks_and_caps_distinct_chunks():
+    business, risk, _ = make_filing_hits()
+    secondary = [
+        FilingHit(business.excerpt.model_copy(update={"source_id": f"business-{i}"}), 0.7 + i / 20)
+        for i in range(2)
+    ]
+    other_risks = [
+        FilingHit(risk.excerpt.model_copy(update={"source_id": f"risk-{i}"}), 0.72 + i / 20)
+        for i in range(6)
+    ]
+    store = Mock(spec=FilingStore)
+    store.search_filings.side_effect = [
+        [business, *secondary],
+        [risk, *other_risks[:2]],
+        [risk, *other_risks[2:4]],
+        other_risks[4:],
+    ]
+    request = build_sec_request(store, "NVDA")
+    expected = [business, risk, other_risks[4], secondary[0], other_risks[0], other_risks[2]]
+    assert request.excerpts == [hit.excerpt for hit in expected]

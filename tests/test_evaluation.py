@@ -17,6 +17,7 @@ def cases():
 
 
 def expected_analysis(case):
+    evidence = {excerpt.source_id: excerpt.text for excerpt in case.request.excerpts}
     return {
         "key_findings": [
             {"text": topic.description, "source_ids": topic.source_ids}
@@ -26,7 +27,11 @@ def expected_analysis(case):
             {"text": topic.description, "source_ids": topic.source_ids} for topic in case.risks
         ],
         "opportunities": [
-            {"text": topic.description, "source_ids": topic.source_ids}
+            {
+                "text": topic.description,
+                "source_ids": topic.source_ids,
+                "evidence_quote": evidence[topic.source_ids[0]],
+            }
             for topic in case.opportunities
         ],
         "missing_information": case.known_gaps,

@@ -25,7 +25,7 @@ class FilingStoreSettings(BaseModel):
     vector_bucket: NonEmptyText
     index_name: NonEmptyText
     dimensions: int = 256
-    max_distance: float = Field(default=0.70, ge=0, le=2)
+    max_distance: float | None = Field(default=None, ge=0, le=2)
 
 
 @dataclass(frozen=True)
@@ -173,7 +173,9 @@ class FilingStore:
         for vector in sorted(response["vectors"], key=lambda item: (item["distance"], item["key"])):
             distance = vector["distance"]
             metadata = vector["metadata"]
-            if metadata["ticker"] != ticker or not 0 <= distance <= self.settings.max_distance:
+            if metadata["ticker"] != ticker or not 0 <= distance <= 2:
+                continue
+            if self.settings.max_distance is not None and distance > self.settings.max_distance:
                 continue
             source_key = metadata["source_key"]
             if source_key not in corpora:
@@ -187,12 +189,13 @@ class FilingStore:
 
 
 def load_filing_store() -> FilingStore:
+    cutoff = os.getenv("SEC_MAX_DISTANCE", "").strip()
     settings = FilingStoreSettings(
         source_bucket=os.getenv("SEC_SOURCE_BUCKET", ""),
         vector_bucket=os.getenv("S3_VECTOR_BUCKET", ""),
         index_name=os.getenv("S3_VECTOR_INDEX", ""),
         dimensions=int(os.getenv("SEC_EMBEDDING_DIMENSIONS", "256")),
-        max_distance=float(os.getenv("SEC_MAX_DISTANCE", "0.70")),
+        max_distance=float(cutoff) if cutoff else None,
     )
     session = boto3.Session(region_name=os.getenv("AWS_REGION") or None)
     if not session.region_name:

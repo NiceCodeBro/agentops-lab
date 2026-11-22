@@ -65,7 +65,7 @@ def ingest() -> int:
 
 
 def smoke() -> int:
-    parser = argparse.ArgumentParser(description="Check three NVIDIA SEC retrieval topics.")
+    parser = argparse.ArgumentParser(description="Check NVIDIA SEC retrieval topics.")
     parser.add_argument("--show-text", action="store_true", help="Print complete retrieved chunks")
     args = parser.parse_args()
 

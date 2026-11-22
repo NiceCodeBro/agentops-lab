@@ -96,8 +96,14 @@ def test_index_and_embedding_dimensions_are_validated(service_stubs):
         embed_text(store.runtime, "supplier risk", 256)
 
 
-def test_search_filters_by_ticker_and_discards_far_results(service_stubs, filing_corpus):
+@pytest.mark.parametrize("cutoff", [None, 0.70])
+def test_search_prefers_lower_distances_and_only_filters_with_explicit_cutoff(
+    service_stubs,
+    filing_corpus,
+    cutoff,
+):
     store, titan, vectors, source = service_stubs
+    store.settings.max_distance = cutoff
     stub_index(vectors)
     stub_embedding(titan, "supply chain")
     business, risk, discussion = filing_corpus.chunks
@@ -109,7 +115,7 @@ def test_search_filters_by_ticker_and_discards_far_results(service_stubs, filing
             "vectors": [
                 {"key": business.source_id, "distance": 0.41, "metadata": metadata},
                 {"key": risk.source_id, "distance": 0.31, "metadata": metadata},
-                {"key": discussion.source_id, "distance": 0.88, "metadata": metadata},
+                {"key": discussion.source_id, "distance": 0.7035, "metadata": metadata},
                 {
                     "key": "wrong-company",
                     "distance": 0.20,
@@ -131,8 +137,9 @@ def test_search_filters_by_ticker_and_discards_far_results(service_stubs, filing
 
     hits = store.search_filings("supply chain", " nvda ", top_k=4)
 
-    assert [hit.excerpt for hit in hits] == [risk, business]
-    assert [hit.distance for hit in hits] == [0.31, 0.41]
+    expected = [risk, business] if cutoff else [risk, business, discussion]
+    assert [hit.excerpt for hit in hits] == expected
+    assert len(hits) == len(expected)
 
 
 def test_empty_query_result_does_not_load_source_objects(service_stubs):

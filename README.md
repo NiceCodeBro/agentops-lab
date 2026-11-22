@@ -17,7 +17,9 @@ src/agentops_lab/          Python application package
   filing_store.py         Titan embeddings, S3 source storage, and S3 Vectors retrieval
   sec_research.py         Build a research request from SEC search results
   sec_cli.py              Manual ingestion and retrieval smoke commands
+  evaluation.py           Synthetic research quality checks
 examples/                 Synthetic research input
+infra/terraform/          Terraform configuration for the dev SEC pilot
 tests/                    Offline tests
 pyproject.toml            Package, dependencies, pytest, and Ruff configuration
 uv.lock                   Resolved dependencies for reproducible installs
@@ -79,6 +81,8 @@ uv run --locked --env-file .env agentops-evaluate --case nvda-supplier-risk --ca
 
 The report shows which expected topics matched, the actual claims and citations, citation ID errors, and gaps or claims to review. Coverage uses case-specific phrase matching. A fact listed as missing is flagged when it matches a topic the fixture marks as disclosed. Numbers absent from cited text, unexpected topics, and unexpected sources also generate review flags. Paraphrases, qualifications, and misleading claims containing the expected words can evade these checks. Read claims against their cited excerpts to judge factual support. The command returns a nonzero exit status for agent failures or citation ID errors. Coverage misses and review flags are diagnostic.
 
+In a three-case comparison using the same synthetic inputs and prompt, Nova Micro covered 4/4 expected findings, 1/3 risks, and 0/3 opportunities. Nova Pro covered 3/4 findings, 3/3 risks, and 2/3 opportunities. Both returned valid citation IDs. These results informed the choice of Nova Pro for supervised SEC research.
+
 ## NVIDIA SEC retrieval pilot
 
 The pilot uses NVIDIA's Form 10-K filed February 25, 2026, accession `0001045810-26-000021`, covering the fiscal year ended January 25, 2026. The ingestion command discovers that accession in NVIDIA's EDGAR submissions and downloads the primary filing. Set `SEC_USER_AGENT` in your environment to your organization or project name and an administrative contact email. The command waits at least one second between requests and retries transient failures with backoff. If EDGAR denies the client, you can pass a locally saved copy of the primary filing with `--html path/to/nvda-20260125.htm`. The command checks the copy's inline XBRL issuer, form, and reporting period. [SEC filing detail](https://www.sec.gov/Archives/edgar/data/1045810/000104581026000021/0001045810-26-000021-index.htm) · [SEC fair access guidance](https://www.sec.gov/about/webmaster-frequently-asked-questions)
@@ -104,7 +108,17 @@ SEC research defaults to the Nova Pro EU profile when `BEDROCK_MODEL_ID` is unse
 
 Ingestion extracts narrative from Business, Risk Factors, and MD&A. It strips HTML layout, hidden XBRL, and tables. The source bucket holds complete extracted chunks and their provenance. The index holds embeddings, stable keys, and small filterable metadata fields. Reingesting an identical corpus upserts the same keys. A changed corpus at the same accession is rejected so it cannot mix with previously indexed chunks.
 
-The research command makes three fixed semantic queries filtered to NVDA, drops distant and off-topic hits, and passes up to six unique chunks to the existing LangGraph agent. `SEC_MAX_DISTANCE` controls the cosine-distance cutoff and defaults to `0.70`. A report's cited sources include the filing date, SEC URL, accession number, section, and chunk number. If retrieval supplies no usable evidence, the graph returns an insufficient-evidence brief without invoking the reasoning model. The smoke test checks topic and section matches, and citation validation checks source IDs. Evaluate the wording of each financial claim against the actual chunk text.
+The research command makes four fixed semantic queries filtered to NVDA, covering business growth, supply, customer concentration, and export risks. It checks the section and topic of the nearest hits and interleaves their per-query ranks. It passes at most six distinct chunks to LangGraph. Lower cosine distance means a closer vector match. `SEC_MAX_DISTANCE` optionally adds a maximum distance, and rank and topical checks apply when it is unset. If retrieval supplies no usable evidence, the graph returns an insufficient-evidence brief. [S3 Vectors query ranking](https://docs.aws.amazon.com/AmazonS3/latest/API/API_S3VectorBuckets_QueryVectors.html)
+
+The brief preserves the filing date, original SEC URL, accession number, section, and chunk number. The agent reports opportunities as inferences and drops any without a matching quote in a cited excerpt. Quote matching makes evidence easier to inspect. Verify that the passage supports the full claim before relying on the brief.
+
+### Observed pilot results
+
+The Frankfurt sandbox indexed **96 chunks** from the filing: 23 Business, 58 Risk Factors, and 15 MD&A. The S3 Vectors index and source corpus contained the same chunk IDs. The Python research command ran locally and called Bedrock for reasoning.
+
+The original three-query smoke test matched two topics at the `0.70` cutoff. The combined supply and customer query ranked an off-topic result ahead of two relevant excerpts just above the cutoff. The revised flow returned topical evidence for all four queries with the cutoff unset. It passed six distinct excerpts to Nova Pro. `agentops-sec-smoke --show-text` displays the sections, distances, and excerpt text so a reviewer can repeat the retrieval check independently.
+
+The supervised brief cited four chunks and reported customer concentration, supply constraints, and export controls separately. Review found that a networking-sales opportunity inferred upside from a passage about downside risk. A missing-information entry about the H20 charge also needed to specify the detail that was absent. These gaps matter when later agents consume the brief. Preserve the cited evidence and keep human review in the loop.
 
 ### Terraform setup and lifecycle
 
