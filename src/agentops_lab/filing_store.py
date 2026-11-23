@@ -153,10 +153,37 @@ class FilingStore:
         return len(corpus.chunks)
 
     def search_filings(self, query: str, ticker: str, top_k: int) -> list[FilingHit]:
+        hits_by_query = self.search_filings_batch([query], ticker, top_k)
+        return hits_by_query[0]
+
+    def search_filings_batch(
+        self, queries: list[str], ticker: str, top_k: int
+    ) -> list[list[FilingHit]]:
+        """Run queries in order, sharing index validation and source reads for this batch."""
         ticker = ticker.strip().upper()
-        if not ticker or not query.strip() or not 1 <= top_k <= 10:
+        if (
+            not ticker
+            or not 1 <= top_k <= 10
+            or not queries
+            or any(not query.strip() for query in queries)
+        ):
             raise ValueError("Provide a query, a ticker, and a top_k between 1 and 10.")
         self.validate_index()
+
+        corpora: dict[str, dict[str, DocumentExcerpt]] = {}
+        hits_by_query = []
+        for query in queries:
+            hits = self._search_filings(query, ticker, top_k, corpora)
+            hits_by_query.append(hits)
+        return hits_by_query
+
+    def _search_filings(
+        self,
+        query: str,
+        ticker: str,
+        top_k: int,
+        corpora: dict[str, dict[str, DocumentExcerpt]],
+    ) -> list[FilingHit]:
         embedding = embed_text(self.runtime, query, self.settings.dimensions)
         response = self.vectors.query_vectors(
             vectorBucketName=self.settings.vector_bucket,
@@ -169,7 +196,6 @@ class FilingStore:
         )
 
         hits = []
-        corpora: dict[str, dict[str, DocumentExcerpt]] = {}
         for vector in sorted(response["vectors"], key=lambda item: (item["distance"], item["key"])):
             distance = vector["distance"]
             metadata = vector["metadata"]

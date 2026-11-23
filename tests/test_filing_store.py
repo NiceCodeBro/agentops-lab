@@ -161,6 +161,41 @@ def test_empty_query_result_does_not_load_source_objects(service_stubs):
     assert store.search_filings("supply chain", "NVDA", top_k=3) == []
 
 
+def test_search_batch_reuses_index_validation_and_source_reads(service_stubs, filing_corpus):
+    store, titan, vectors, source = service_stubs
+    business, risk, _ = filing_corpus.chunks
+    queries = ["supply chain", "business segments"]
+    source_text = filing_corpus.model_dump_json().encode()
+    metadata = {"ticker": "NVDA", "source_key": OBJECT["Key"]}
+
+    for _ in range(2):
+        stub_index(vectors)
+        for query, excerpt in zip(queries, [risk, business], strict=True):
+            stub_embedding(titan, query)
+            vectors.add_response(
+                "query_vectors",
+                {
+                    "distanceMetric": "cosine",
+                    "vectors": [{"key": excerpt.source_id, "distance": 0.4, "metadata": metadata}],
+                },
+                {
+                    **INDEX,
+                    "topK": 3,
+                    "queryVector": {"float32": VECTOR},
+                    "filter": {"ticker": {"$eq": "NVDA"}},
+                    "returnMetadata": True,
+                    "returnDistance": True,
+                },
+            )
+        source.add_response("get_object", {"Body": BytesIO(source_text)}, OBJECT)
+
+        hits_by_query = store.search_filings_batch(queries, "NVDA", top_k=3)
+
+        assert [[hit.excerpt for hit in hits] for hits in hits_by_query] == [[risk], [business]]
+        vectors.assert_no_pending_responses()
+        source.assert_no_pending_responses()
+
+
 def test_ingestion_reuses_the_same_object_and_vector_keys(service_stubs, filing_corpus):
     store, titan, vectors, source = service_stubs
     encoded = filing_corpus.model_dump_json().encode()

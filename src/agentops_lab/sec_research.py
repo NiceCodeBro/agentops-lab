@@ -56,9 +56,11 @@ def build_sec_request(store: FilingStore, ticker: str) -> ResearchRequest:
     ticker = ticker.strip().upper()
     if ticker != TICKER:
         raise ValueError("The SEC pilot supports NVDA only.")
+
+    queries = [topic.query for topic in EVIDENCE_TOPICS]
+    hits_by_query = store.search_filings_batch(queries, ticker, top_k=3)
     ranked_topics = []
-    for topic in EVIDENCE_TOPICS:
-        hits = store.search_filings(topic.query, ticker, top_k=3)
+    for topic, hits in zip(EVIDENCE_TOPICS, hits_by_query, strict=True):
         matches = [hit.excerpt for hit in hits if topic.matches(hit.excerpt)]
         ranked_topics.append(matches)
 

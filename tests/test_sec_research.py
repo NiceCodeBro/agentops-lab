@@ -28,12 +28,17 @@ def make_filing_hits():
 def test_sec_request_deduplicates_and_excludes_off_topic_hits():
     business, risk, irrelevant = make_filing_hits()
     store = Mock(spec=FilingStore)
-    store.search_filings.side_effect = [[business, irrelevant], [risk, irrelevant], [risk], [risk]]
+    store.search_filings_batch.return_value = [
+        [business, irrelevant],
+        [risk, irrelevant],
+        [risk],
+        [risk],
+    ]
 
     request = build_sec_request(store, " nvda ")
 
-    searches = [(call.args, call.kwargs) for call in store.search_filings.call_args_list]
-    assert searches == [((topic.query, "NVDA"), {"top_k": 3}) for topic in EVIDENCE_TOPICS]
+    queries = [topic.query for topic in EVIDENCE_TOPICS]
+    store.search_filings_batch.assert_called_once_with(queries, "NVDA", top_k=3)
     assert request.excerpts == [business.excerpt, risk.excerpt]
     assert request.synthetic is False
 
@@ -45,7 +50,7 @@ def test_sec_cli_runs_existing_research_graph_with_nova_pro_default(
 ):
     business, risk, irrelevant = make_filing_hits()
     store = Mock(spec=FilingStore)
-    store.search_filings.side_effect = [[business, irrelevant], [risk], [risk], [risk]]
+    store.search_filings_batch.return_value = [[business, irrelevant], [risk], [risk], [risk]]
     monkeypatch.setattr("agentops_lab.research_cli.load_filing_store", lambda: store)
     monkeypatch.delenv("BEDROCK_MODEL_ID")
     monkeypatch.setattr(sys, "argv", ["agentops-research", "--sec", "--ticker", "NVDA"])
@@ -93,7 +98,7 @@ def test_sec_cli_runs_existing_research_graph_with_nova_pro_default(
 def test_no_relevant_sec_matches_skips_reasoning():
     store = Mock(spec=FilingStore)
     irrelevant = make_filing_hits()[2]
-    store.search_filings.return_value = [irrelevant]
+    store.search_filings_batch.return_value = [[irrelevant] for _ in EVIDENCE_TOPICS]
     request = build_sec_request(store, "NVDA")
     analyze = Mock()
     graph = build_research_graph(RunnableLambda(lambda messages: analyze(messages)))
@@ -128,7 +133,7 @@ def test_interleaves_topic_ranks_and_caps_distinct_chunks():
         for i in range(6)
     ]
     store = Mock(spec=FilingStore)
-    store.search_filings.side_effect = [
+    store.search_filings_batch.return_value = [
         [business, *secondary],
         [risk, *other_risks[:2]],
         [risk, *other_risks[2:4]],

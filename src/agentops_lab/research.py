@@ -50,8 +50,7 @@ def build_research_graph(
 ) -> CompiledStateGraph:
     def research(state: ResearchInput) -> ResearchOutput:
         request = state["request"]
-        sources = {excerpt.source_id: excerpt for excerpt in request.excerpts}
-        if sources:
+        if request.excerpts:
             evidence = request.model_dump(mode="json", exclude={"excerpts": {"__all__": {"url"}}})
             evidence_json = json.dumps(evidence)
             messages: list[BaseMessage] = [
@@ -65,56 +64,7 @@ def build_research_graph(
                 key_findings=[], opportunities=[], risks=[], missing_information=[]
             )
 
-        model_claims = [*analysis.key_findings, *analysis.opportunities, *analysis.risks]
-        model_source_ids = {source_id for claim in model_claims for source_id in claim.source_ids}
-        unknown_source_ids = model_source_ids - sources.keys()
-        if unknown_source_ids:
-            raise ValueError("Research output cites source IDs absent from the supplied excerpts.")
-
-        # A matching quote makes the inference reviewable. It can't prove what the quote entails.
-        opportunities = []
-        for opportunity in analysis.opportunities:
-            quote = " ".join((opportunity.evidence_quote or "").split())
-            if len(quote.split()) < 5:
-                continue
-            if any(quote in " ".join(sources[key].text.split()) for key in opportunity.source_ids):
-                text = f"Potential opportunity: {opportunity.text}"
-                opportunities.append(opportunity.model_copy(update={"text": text}))
-
-        review_notes = []
-        omitted = len(analysis.opportunities) - len(opportunities)
-        if omitted:
-            review_notes.append(
-                f"Omitted {omitted} opportunities without a matching evidence quote."
-            )
-
-        claims = [*analysis.key_findings, *opportunities, *analysis.risks]
-        cited_source_ids = {source_id for claim in claims for source_id in claim.source_ids}
-        missing_information = analysis.missing_information
-        if not claims:
-            missing_information = [
-                "Insufficient evidence for a sourced research finding.",
-                *missing_information,
-            ]
-
-        cited_sources: list[SourceReference] = []
-        for source_id, excerpt in sources.items():
-            if source_id in cited_source_ids:
-                metadata = excerpt.model_dump(exclude={"text"})
-                reference = SourceReference.model_validate(metadata)
-                cited_sources.append(reference)
-
-        brief = ResearchBrief(
-            key_findings=analysis.key_findings,
-            opportunities=opportunities,
-            risks=analysis.risks,
-            missing_information=missing_information,
-            company=request.company,
-            ticker=request.ticker,
-            synthetic=request.synthetic,
-            sources=cited_sources,
-            review_notes=review_notes,
-        )
+        brief = build_research_brief(request, analysis)
         return {"brief": brief}
 
     graph = StateGraph(ResearchState, input_schema=ResearchInput, output_schema=ResearchOutput)
@@ -122,3 +72,56 @@ def build_research_graph(
     graph.add_edge(START, "research")
     graph.add_edge("research", END)
     return graph.compile()
+
+
+def build_research_brief(request: ResearchRequest, analysis: ResearchAnalysis) -> ResearchBrief:
+    """Check citations against the supplied evidence and assemble the brief."""
+    sources = {excerpt.source_id: excerpt for excerpt in request.excerpts}
+    model_claims = [*analysis.key_findings, *analysis.opportunities, *analysis.risks]
+    model_source_ids = {source_id for claim in model_claims for source_id in claim.source_ids}
+    unknown_source_ids = model_source_ids - sources.keys()
+    if unknown_source_ids:
+        raise ValueError("Research output cites source IDs absent from the supplied excerpts.")
+
+    # A matching quote makes the inference reviewable. It can't prove what the quote entails.
+    opportunities = []
+    for opportunity in analysis.opportunities:
+        quote = " ".join((opportunity.evidence_quote or "").split())
+        if len(quote.split()) < 5:
+            continue
+        if any(quote in " ".join(sources[key].text.split()) for key in opportunity.source_ids):
+            text = f"Potential opportunity: {opportunity.text}"
+            opportunities.append(opportunity.model_copy(update={"text": text}))
+
+    review_notes = []
+    omitted = len(analysis.opportunities) - len(opportunities)
+    if omitted:
+        review_notes.append(f"Omitted {omitted} opportunities without a matching evidence quote.")
+
+    claims = [*analysis.key_findings, *opportunities, *analysis.risks]
+    cited_source_ids = {source_id for claim in claims for source_id in claim.source_ids}
+    missing_information = analysis.missing_information
+    if not claims:
+        missing_information = [
+            "Insufficient evidence for a sourced research finding.",
+            *missing_information,
+        ]
+
+    cited_sources: list[SourceReference] = []
+    for source_id, excerpt in sources.items():
+        if source_id in cited_source_ids:
+            metadata = excerpt.model_dump(exclude={"text"})
+            reference = SourceReference.model_validate(metadata)
+            cited_sources.append(reference)
+
+    return ResearchBrief(
+        key_findings=analysis.key_findings,
+        opportunities=opportunities,
+        risks=analysis.risks,
+        missing_information=missing_information,
+        company=request.company,
+        ticker=request.ticker,
+        synthetic=request.synthetic,
+        sources=cited_sources,
+        review_notes=review_notes,
+    )

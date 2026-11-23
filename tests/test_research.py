@@ -7,9 +7,9 @@ from botocore.stub import ANY
 from langchain_core.runnables import RunnableLambda
 from pydantic import ValidationError
 
-from agentops_lab.research import build_research_graph
+from agentops_lab.research import build_research_brief, build_research_graph
 from agentops_lab.research_cli import main
-from agentops_lab.research_models import ResearchBrief, ResearchRequest
+from agentops_lab.research_models import ResearchAnalysis, ResearchBrief, ResearchRequest
 
 FIXTURE = Path("examples/nvda.synthetic.json")
 ANALYSIS = {
@@ -122,9 +122,9 @@ def test_opportunity_requires_a_quote_in_its_cited_excerpt(request_with_evidence
     supported = ANALYSIS["opportunities"][0]
     missing_quote = {"text": "A new contract was signed.", "source_ids": ["demo-results"]}
     wrong_source = {**supported, "source_ids": ["demo-risks"]}
-    analysis = {**ANALYSIS, "opportunities": [missing_quote, wrong_source, supported]}
-    graph = build_research_graph(RunnableLambda(lambda messages: analysis))
-    brief = graph.invoke({"request": request_with_evidence})["brief"]
+    model_output = {**ANALYSIS, "opportunities": [missing_quote, wrong_source, supported]}
+    analysis = ResearchAnalysis.model_validate(model_output)
+    brief = build_research_brief(request_with_evidence, analysis)
 
     assert len(brief.opportunities) == 1
     assert brief.opportunities[0].text.startswith("Potential opportunity:")
