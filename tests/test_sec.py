@@ -6,7 +6,7 @@ from urllib.error import HTTPError
 
 import pytest
 
-from agentops_lab import sec
+from agentops_lab.retrieval import sec
 
 # Fictional parser fixture. Filing identifiers exercise the pilot identity checks.
 HTML = b"""<html><body>

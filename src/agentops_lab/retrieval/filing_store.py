@@ -3,9 +3,11 @@
 import json
 import math
 import os
+from collections.abc import Callable
 from contextlib import closing
 from dataclasses import dataclass
 from itertools import batched
+from time import perf_counter
 
 import boto3
 from botocore.client import BaseClient
@@ -13,11 +15,13 @@ from botocore.config import Config
 from botocore.exceptions import ClientError
 from pydantic import BaseModel, Field
 
-from agentops_lab.research_models import DocumentExcerpt, NonEmptyText
-from agentops_lab.sec import FilingCorpus
+from agentops_lab.models.research import DocumentExcerpt, NonEmptyText
+from agentops_lab.retrieval.sec import FilingCorpus
 
 EMBEDDING_MODEL_ID = "amazon.titan-embed-text-v2:0"
 SUPPORTED_DIMENSIONS = (256, 512, 1024)
+
+type EmbeddingObserver = Callable[[int, int | None, bool], None]
 
 
 class FilingStoreSettings(BaseModel):
@@ -34,21 +38,31 @@ class FilingHit:
     distance: float
 
 
-def embed_text(runtime: BaseClient, text: str, dimensions: int) -> list[float]:
+def embed_text(
+    runtime: BaseClient, text: str, dimensions: int, *, observe: EmbeddingObserver | None = None
+) -> list[float]:
     if dimensions not in SUPPORTED_DIMENSIONS:
         raise ValueError("Titan Text Embeddings V2 requires 256, 512, or 1024 dimensions.")
     if not text.strip():
         raise ValueError("Embedding input cannot be empty.")
 
     payload = {"inputText": text, "dimensions": dimensions, "normalize": True}
-    response = runtime.invoke_model(
-        modelId=EMBEDDING_MODEL_ID,
-        contentType="application/json",
-        accept="application/json",
-        body=json.dumps(payload),
-    )
-    with closing(response["body"]) as body:
-        data = json.load(body)
+    started = perf_counter()
+    try:
+        response = runtime.invoke_model(
+            modelId=EMBEDDING_MODEL_ID,
+            contentType="application/json",
+            accept="application/json",
+            body=json.dumps(payload),
+        )
+        with closing(response["body"]) as body:
+            data = json.load(body)
+    except Exception:
+        if observe is not None:
+            observe(round((perf_counter() - started) * 1000), None, False)
+        raise
+    if observe is not None:
+        observe(round((perf_counter() - started) * 1000), data.get("inputTextTokenCount"), True)
     vector = data["embedding"]
     if len(vector) != dimensions or not all(math.isfinite(value) for value in vector):
         raise ValueError(f"Titan did not return a finite {dimensions}-dimensional vector.")
@@ -157,7 +171,12 @@ class FilingStore:
         return hits_by_query[0]
 
     def search_filings_batch(
-        self, queries: list[str], ticker: str, top_k: int
+        self,
+        queries: list[str],
+        ticker: str,
+        top_k: int,
+        *,
+        on_embedding: EmbeddingObserver | None = None,
     ) -> list[list[FilingHit]]:
         """Run queries in order, sharing index validation and source reads for this batch."""
         ticker = ticker.strip().upper()
@@ -173,7 +192,7 @@ class FilingStore:
         corpora: dict[str, dict[str, DocumentExcerpt]] = {}
         hits_by_query = []
         for query in queries:
-            hits = self._search_filings(query, ticker, top_k, corpora)
+            hits = self._search_filings(query, ticker, top_k, corpora, on_embedding)
             hits_by_query.append(hits)
         return hits_by_query
 
@@ -183,8 +202,9 @@ class FilingStore:
         ticker: str,
         top_k: int,
         corpora: dict[str, dict[str, DocumentExcerpt]],
+        on_embedding: EmbeddingObserver | None,
     ) -> list[FilingHit]:
-        embedding = embed_text(self.runtime, query, self.settings.dimensions)
+        embedding = embed_text(self.runtime, query, self.settings.dimensions, observe=on_embedding)
         response = self.vectors.query_vectors(
             vectorBucketName=self.settings.vector_bucket,
             indexName=self.settings.index_name,
@@ -214,7 +234,7 @@ class FilingStore:
         return hits
 
 
-def load_filing_store() -> FilingStore:
+def load_filing_store(*, embedding_attempts: int = 3) -> FilingStore:
     cutoff = os.getenv("SEC_MAX_DISTANCE", "").strip()
     settings = FilingStoreSettings(
         source_bucket=os.getenv("SEC_SOURCE_BUCKET", ""),
@@ -229,7 +249,8 @@ def load_filing_store() -> FilingStore:
     config = Config(
         connect_timeout=5, read_timeout=30, retries={"mode": "standard", "total_max_attempts": 3}
     )
-    runtime = session.client("bedrock-runtime", config=config)
+    runtime_config = Config(retries={"mode": "standard", "total_max_attempts": embedding_attempts})
+    runtime = session.client("bedrock-runtime", config=config.merge(runtime_config))
     vectors = session.client("s3vectors", config=config)
     source = session.client("s3", config=config)
     return FilingStore(settings, runtime=runtime, vectors=vectors, source=source)

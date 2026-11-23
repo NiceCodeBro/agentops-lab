@@ -5,12 +5,12 @@ from unittest.mock import Mock
 from botocore.stub import ANY
 from langchain_core.runnables import RunnableLambda
 
-from agentops_lab.filing_store import FilingHit, FilingStore
-from agentops_lab.research import build_research_graph
-from agentops_lab.research_cli import main
-from agentops_lab.sec import PILOT_FILING, create_chunks
-from agentops_lab.sec_cli import smoke
-from agentops_lab.sec_research import EVIDENCE_TOPICS, build_sec_request
+from agentops_lab.cli.research import main
+from agentops_lab.cli.sec import smoke
+from agentops_lab.retrieval.filing_store import FilingHit, FilingStore
+from agentops_lab.retrieval.sec import PILOT_FILING, create_chunks
+from agentops_lab.retrieval.sec_research import EVIDENCE_TOPICS, build_sec_request
+from agentops_lab.workflows.research import build_research_graph
 
 
 def make_filing_hits():
@@ -51,7 +51,7 @@ def test_sec_cli_runs_existing_research_graph_with_nova_pro_default(
     business, risk, irrelevant = make_filing_hits()
     store = Mock(spec=FilingStore)
     store.search_filings_batch.return_value = [[business, irrelevant], [risk], [risk], [risk]]
-    monkeypatch.setattr("agentops_lab.research_cli.load_filing_store", lambda: store)
+    monkeypatch.setattr("agentops_lab.cli.research.load_filing_store", lambda: store)
     monkeypatch.delenv("BEDROCK_MODEL_ID")
     monkeypatch.setattr(sys, "argv", ["agentops-research", "--sec", "--ticker", "NVDA"])
 
@@ -113,7 +113,7 @@ def test_smoke_flags_wrong_topic_in_expected_section(monkeypatch, capsys):
     business, risk, irrelevant = make_filing_hits()
     store = Mock(spec=FilingStore)
     store.search_filings.side_effect = [[business], [irrelevant], [risk], [risk]]
-    monkeypatch.setattr("agentops_lab.sec_cli.load_filing_store", lambda: store)
+    monkeypatch.setattr("agentops_lab.cli.sec.load_filing_store", lambda: store)
     monkeypatch.setattr(sys, "argv", ["agentops-sec-smoke"])
 
     assert smoke() == 1

@@ -8,8 +8,8 @@ from urllib.error import HTTPError
 
 from botocore.exceptions import BotoCoreError, ClientError
 
-from agentops_lab.filing_store import load_filing_store
-from agentops_lab.sec import (
+from agentops_lab.retrieval.filing_store import load_filing_store
+from agentops_lab.retrieval.sec import (
     MAX_DOCUMENT_BYTES,
     PILOT_FILING,
     SUBMISSIONS_URL,
@@ -21,7 +21,7 @@ from agentops_lab.sec import (
     sec_get,
     verify_pilot_html,
 )
-from agentops_lab.sec_research import EVIDENCE_TOPICS
+from agentops_lab.retrieval.sec_research import EVIDENCE_TOPICS
 
 
 def ingest() -> int:

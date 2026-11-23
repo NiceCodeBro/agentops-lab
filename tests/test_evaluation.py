@@ -5,9 +5,9 @@ import pytest
 from langchain_core.runnables import RunnableLambda
 from pydantic import TypeAdapter
 
-from agentops_lab.evaluation import EvaluationCase, evaluate_brief, run_evaluations
-from agentops_lab.research import build_research_graph
-from agentops_lab.research_models import CitedClaim, ResearchRequest
+from agentops_lab.evaluation.research import EvaluationCase, evaluate_brief, run_evaluations
+from agentops_lab.models.research import CitedClaim, ResearchRequest
+from agentops_lab.workflows.research import build_research_graph
 
 
 @pytest.fixture

@@ -1,14 +1,12 @@
-"""Single-node LangGraph workflow for excerpt-based research."""
+"""Analyze supplied excerpts and assemble a cited brief."""
 
 import json
-from typing import NotRequired, TypedDict
 
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langchain_core.runnables import Runnable
-from langgraph.graph import END, START, StateGraph
-from langgraph.graph.state import CompiledStateGraph
 
-from agentops_lab.research_models import (
+from agentops_lab.agents._messages import CLAIM_RULES, EVIDENCE_RULES, agent_messages
+from agentops_lab.models.research import (
     ResearchAnalysis,
     ResearchBrief,
     ResearchRequest,
@@ -33,45 +31,22 @@ Avoid generic requests for financial values, units, or periods already present. 
 evidence supports no research finding, state that the evidence is insufficient."""
 
 
-class ResearchInput(TypedDict):
-    request: ResearchRequest
+def research_excerpts(
+    request: ResearchRequest, analyze: Runnable[list[BaseMessage], ResearchAnalysis]
+) -> ResearchBrief:
+    if request.excerpts:
+        evidence = request.model_dump(mode="json", exclude={"excerpts": {"__all__": {"url"}}})
+        messages: list[BaseMessage] = [
+            SystemMessage(SYSTEM_PROMPT),
+            HumanMessage(json.dumps(evidence)),
+        ]
+        analysis = ResearchAnalysis.model_validate(analyze.invoke(messages))
+    else:
+        analysis = ResearchAnalysis(
+            key_findings=[], opportunities=[], risks=[], missing_information=[]
+        )
 
-
-class ResearchOutput(TypedDict):
-    brief: ResearchBrief
-
-
-class ResearchState(ResearchInput):
-    brief: NotRequired[ResearchBrief]
-
-
-def build_research_graph(
-    analyze: Runnable[list[BaseMessage], ResearchAnalysis],
-) -> CompiledStateGraph:
-    def research(state: ResearchInput) -> ResearchOutput:
-        request = state["request"]
-        if request.excerpts:
-            evidence = request.model_dump(mode="json", exclude={"excerpts": {"__all__": {"url"}}})
-            evidence_json = json.dumps(evidence)
-            messages: list[BaseMessage] = [
-                SystemMessage(SYSTEM_PROMPT),
-                HumanMessage(evidence_json),
-            ]
-            model_output = analyze.invoke(messages)
-            analysis = ResearchAnalysis.model_validate(model_output)
-        else:
-            analysis = ResearchAnalysis(
-                key_findings=[], opportunities=[], risks=[], missing_information=[]
-            )
-
-        brief = build_research_brief(request, analysis)
-        return {"brief": brief}
-
-    graph = StateGraph(ResearchState, input_schema=ResearchInput, output_schema=ResearchOutput)
-    graph.add_node("research", research)
-    graph.add_edge(START, "research")
-    graph.add_edge("research", END)
-    return graph.compile()
+    return build_research_brief(request, analysis)
 
 
 def build_research_brief(request: ResearchRequest, analysis: ResearchAnalysis) -> ResearchBrief:
@@ -124,4 +99,16 @@ def build_research_brief(request: ResearchRequest, analysis: ResearchAnalysis) -
         synthetic=request.synthetic,
         sources=cited_sources,
         review_notes=review_notes,
+    )
+
+
+def investment_research_messages(**payload: object) -> list[BaseMessage]:
+    return agent_messages(
+        f"""Answer the assigned research questions from the supplied excerpts. Return up to three
+key business or financial findings and three distinct material risks. Preserve comparative figures
+and fiscal periods where available. For a follow-up, focus on what the new evidence answers and
+produce only incremental findings. Omit claims for questions the excerpts cannot answer.
+{EVIDENCE_RULES}
+{CLAIM_RULES}""",
+        **payload,
     )

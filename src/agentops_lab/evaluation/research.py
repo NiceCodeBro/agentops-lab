@@ -1,21 +1,16 @@
 """Evaluate synthetic research cases with deterministic, review-oriented checks."""
 
-import argparse
 import re
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Self
 
 from botocore.exceptions import BotoCoreError, ClientError
 from langchain_core.exceptions import OutputParserException
 from langgraph.graph.state import CompiledStateGraph
-from pydantic import BaseModel, Field, TypeAdapter, model_validator
+from pydantic import BaseModel, Field, model_validator
 
-from agentops_lab.bedrock import build_structured_model, load_bedrock_model
-from agentops_lab.research import build_research_graph
-from agentops_lab.research_models import (
+from agentops_lab.models.research import (
     NonEmptyText,
-    ResearchAnalysis,
     ResearchBrief,
     ResearchRequest,
 )
@@ -189,24 +184,3 @@ def run_evaluations(cases: list[EvaluationCase], graph: CompiledStateGraph) -> i
     for section, (covered, expected) in totals.items():
         print(f"  {section}: {covered}/{expected} expected topics across scored cases")
     return int(failures > 0)
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--cases", type=Path, default=Path("examples/evaluation.synthetic.json"))
-    parser.add_argument("--case", action="append", help="Select a case ID. Repeat to select more.")
-    args = parser.parse_args()
-
-    raw_cases = args.cases.read_bytes()
-    cases = TypeAdapter(list[EvaluationCase]).validate_json(raw_cases)
-    if args.case:
-        unknown = set(args.case) - {case.id for case in cases}
-        if unknown:
-            parser.error(f"Unknown case IDs: {', '.join(sorted(unknown))}")
-        cases = [case for case in cases if case.id in args.case]
-
-    model = load_bedrock_model(max_tokens=768)
-    analyze = build_structured_model(model, ResearchAnalysis, output_mode="tool")
-    graph = build_research_graph(analyze)
-    print(f"Model: {model.model_id} ({model.region_name})")
-    return run_evaluations(cases, graph)

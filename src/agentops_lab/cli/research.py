@@ -9,11 +9,11 @@ from botocore.exceptions import BotoCoreError, ClientError
 from langchain_core.exceptions import OutputParserException
 
 from agentops_lab.bedrock import build_structured_model, load_bedrock_model
-from agentops_lab.filing_store import load_filing_store
-from agentops_lab.research import build_research_graph
-from agentops_lab.research_models import ResearchAnalysis, ResearchRequest
-from agentops_lab.sec import TICKER
-from agentops_lab.sec_research import build_sec_request
+from agentops_lab.models.research import ResearchAnalysis, ResearchRequest
+from agentops_lab.retrieval.filing_store import load_filing_store
+from agentops_lab.retrieval.sec import TICKER
+from agentops_lab.retrieval.sec_research import build_sec_request
+from agentops_lab.workflows.research import build_research_graph
 
 logger = logging.getLogger(__name__)
 SEC_DEFAULT_MODEL = "eu.amazon.nova-pro-v1:0"

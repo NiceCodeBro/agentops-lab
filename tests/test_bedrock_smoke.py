@@ -4,7 +4,7 @@ import sys
 
 import pytest
 
-from agentops_lab.bedrock_smoke import main
+from agentops_lab.cli.bedrock_smoke import main
 
 REGION = "eu-central-1"
 MODEL_ID = "eu.amazon.nova-micro-v1:0"
@@ -29,7 +29,7 @@ def test_smoke_succeeds_with_model_text(bedrock_stub, caplog, monkeypatch):
         EXPECTED_REQUEST,
     )
 
-    with caplog.at_level(logging.INFO, logger="agentops_lab.bedrock_smoke"):
+    with caplog.at_level(logging.INFO, logger="agentops_lab.cli.bedrock_smoke"):
         assert main() == 0
 
     assert json.loads(caplog.records[-1].message) == {

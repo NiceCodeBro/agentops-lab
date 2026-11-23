@@ -13,7 +13,7 @@ from urllib.request import Request, urlopen
 from bs4 import BeautifulSoup
 from pydantic import BaseModel, Field
 
-from agentops_lab.research_models import DocumentExcerpt, FilingProvenance
+from agentops_lab.models.research import DocumentExcerpt, FilingProvenance
 
 TICKER = "NVDA"
 COMPANY = "NVIDIA Corporation"

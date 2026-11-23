@@ -3,9 +3,9 @@
 from dataclasses import dataclass
 from itertools import zip_longest
 
-from agentops_lab.filing_store import FilingStore
-from agentops_lab.research_models import DocumentExcerpt, ResearchRequest
-from agentops_lab.sec import COMPANY, TICKER
+from agentops_lab.models.research import DocumentExcerpt, ResearchRequest
+from agentops_lab.retrieval.filing_store import FilingStore
+from agentops_lab.retrieval.sec import COMPANY, TICKER
 
 
 @dataclass(frozen=True)
@@ -64,11 +64,22 @@ def build_sec_request(store: FilingStore, ticker: str) -> ResearchRequest:
         matches = [hit.excerpt for hit in hits if topic.matches(hit.excerpt)]
         ranked_topics.append(matches)
 
-    # Interleave topic ranks so a single query cannot crowd out another topic.
+    excerpts = select_distinct_excerpts(ranked_topics, limit=6)
+    return ResearchRequest(company=COMPANY, ticker=ticker, excerpts=excerpts)
+
+
+def select_distinct_excerpts(
+    ranked_topics: list[list[DocumentExcerpt]], *, limit: int, excluded: set[str] | None = None
+) -> list[DocumentExcerpt]:
+    """Interleave query ranks so a single topic cannot crowd out other topics."""
+    if limit <= 0:
+        return []
     excerpts: dict[str, DocumentExcerpt] = {}
     for rank in zip_longest(*ranked_topics):
         for excerpt in rank:
-            if excerpt is None:
+            if excerpt is None or (excluded is not None and excerpt.source_id in excluded):
                 continue
             excerpts.setdefault(excerpt.source_id, excerpt)
-    return ResearchRequest(company=COMPANY, ticker=ticker, excerpts=list(excerpts.values())[:6])
+            if len(excerpts) == limit:
+                return list(excerpts.values())
+    return list(excerpts.values())

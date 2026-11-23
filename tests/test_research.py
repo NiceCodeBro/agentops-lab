@@ -7,9 +7,10 @@ from botocore.stub import ANY
 from langchain_core.runnables import RunnableLambda
 from pydantic import ValidationError
 
-from agentops_lab.research import build_research_brief, build_research_graph
-from agentops_lab.research_cli import main
-from agentops_lab.research_models import ResearchAnalysis, ResearchBrief, ResearchRequest
+from agentops_lab.agents.research import build_research_brief
+from agentops_lab.cli.research import main
+from agentops_lab.models.research import ResearchAnalysis, ResearchBrief, ResearchRequest
+from agentops_lab.workflows.research import build_research_graph
 
 FIXTURE = Path("examples/nvda.synthetic.json")
 ANALYSIS = {

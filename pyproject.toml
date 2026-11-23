@@ -19,11 +19,12 @@ dependencies = [
 ]
 
 [project.scripts]
-agentops-bedrock-smoke = "agentops_lab.bedrock_smoke:main"
-agentops-research = "agentops_lab.research_cli:main"
-agentops-evaluate = "agentops_lab.evaluation:main"
-agentops-ingest-sec = "agentops_lab.sec_cli:ingest"
-agentops-sec-smoke = "agentops_lab.sec_cli:smoke"
+agentops-bedrock-smoke = "agentops_lab.cli.bedrock_smoke:main"
+agentops-research = "agentops_lab.cli.research:main"
+agentops-analyze = "agentops_lab.cli.investment_analysis:main"
+agentops-evaluate = "agentops_lab.cli.evaluate:main"
+agentops-ingest-sec = "agentops_lab.cli.sec:ingest"
+agentops-sec-smoke = "agentops_lab.cli.sec:smoke"
 
 [dependency-groups]
 dev = ["pytest>=8,<10", "ruff>=0.11,<1"]

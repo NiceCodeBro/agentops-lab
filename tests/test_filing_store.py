@@ -6,13 +6,13 @@ import boto3
 import pytest
 from botocore.stub import Stubber
 
-from agentops_lab.filing_store import (
+from agentops_lab.retrieval.filing_store import (
     EMBEDDING_MODEL_ID,
     FilingStore,
     FilingStoreSettings,
     embed_text,
 )
-from agentops_lab.sec import PILOT_FILING, FilingCorpus, create_chunks
+from agentops_lab.retrieval.sec import PILOT_FILING, FilingCorpus, create_chunks
 
 INDEX = {"vectorBucketName": "test-vectors", "indexName": "test-index"}
 VECTOR = [0.0625] * 256
