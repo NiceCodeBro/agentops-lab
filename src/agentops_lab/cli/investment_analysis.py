@@ -35,7 +35,8 @@ def main() -> int:
             max_tokens=limits.max_output_tokens, default_model_id=DEFAULT_MODEL
         )
         store = load_filing_store(embedding_attempts=1)
-        graph = build_investment_graph(build_agent_reasoner(model), store, limits=limits)
+        reasoner = build_agent_reasoner(model)
+        graph = build_investment_graph(reasoner, store, limits=limits)
     except Exception as error:
         print(
             f"Investment analysis configuration failed ({type(error).__name__}).", file=sys.stderr

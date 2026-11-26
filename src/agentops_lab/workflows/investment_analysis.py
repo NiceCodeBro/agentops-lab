@@ -1,18 +1,14 @@
 """Bounded, evidence-based investment analysis with five LangGraph agent roles."""
 
 from collections import Counter
-from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from collections.abc import Sequence
 from functools import partial
 from time import perf_counter
 from typing import Literal
 from uuid import uuid4
 
-from langchain_core.messages import BaseMessage
-from langgraph.config import get_stream_writer
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
-from pydantic import BaseModel
 
 from agentops_lab.agents.bear import bear_messages
 from agentops_lab.agents.bull import bull_messages
@@ -27,106 +23,36 @@ from agentops_lab.agents.planner import bound_plan, planner_messages, query_key
 from agentops_lab.agents.research import investment_research_messages
 from agentops_lab.models.research import DocumentExcerpt, SourceReference
 from agentops_lab.models.workflow import (
-    Agent,
     Arguments,
     CandidateClaim,
     Claim,
+    ClaimDecision,
     ClaimRole,
     EventType,
     EvidenceGap,
-    ExecutionEvent,
     InvestmentInput,
     InvestmentOutput,
     InvestmentReport,
     InvestmentState,
     InvestmentUpdates,
     JudgeReview,
-    ModelCall,
     Reasoner,
     ResearchFindings,
     ResearchPlan,
+    ResearchTask,
     RetrievalTrace,
     ReviewedClaim,
-    WorkflowIssue,
     WorkflowLimits,
 )
 from agentops_lab.retrieval.filing_store import FilingStore
 from agentops_lab.retrieval.sec_research import select_distinct_excerpts
+from agentops_lab.workflows.activity import NodeActivity, elapsed_ms
 
-
-@dataclass
-class NodeActivity:
-    """Collect this node's public events and usage for LangGraph's list reducers."""
-
-    run_id: str
-    agent: Agent
-    events: list[ExecutionEvent] = field(default_factory=list)
-    model_calls: list[ModelCall] = field(default_factory=list)
-    errors: list[WorkflowIssue] = field(default_factory=list)
-
-    def emit(self, kind: EventType, summary: str, source_ids: list[str] | None = None) -> None:
-        event = ExecutionEvent(
-            run_id=self.run_id,
-            agent=self.agent,
-            event_type=kind,
-            timestamp=datetime.now(UTC),
-            summary=summary,
-            source_ids=source_ids or [],
-        )
-        self.events.append(event)
-        get_stream_writer()(event.model_dump(mode="json"))
-
-    def fail(self, message: str) -> None:
-        self.errors.append(WorkflowIssue(agent=self.agent, message=message))
-        self.emit("agent_failed", message)
-
-    def ask[Output: BaseModel](
-        self, reasoner: Reasoner, schema: type[Output], messages: list[BaseMessage]
-    ) -> Output | None:
-        started = perf_counter()
-        reply = None
-        output = None
-        try:
-            reply = reasoner(schema, messages)
-            if reply.stop_reason == "max_tokens":
-                self.fail("The model reached the output token limit.")
-            elif reply.validation_codes:
-                codes = ", ".join(reply.validation_codes)
-                self.fail(f"Structured model output failed validation ({codes}).")
-            else:
-                output = schema.model_validate(reply.output)
-        except Exception as error:
-            self.fail(f"Model call or structured output failed ({type(error).__name__}).")
-        self.model_calls.append(
-            ModelCall(
-                agent=self.agent,
-                service="reasoning",
-                elapsed_ms=elapsed_ms(started),
-                input_tokens=reply.input_tokens if reply else None,
-                output_tokens=reply.output_tokens if reply else None,
-                succeeded=output is not None,
-            )
-        )
-        return output
-
-    def record_embedding(self, duration: int, tokens: int | None, succeeded: bool) -> None:
-        self.model_calls.append(
-            ModelCall(
-                agent=self.agent,
-                service="embedding",
-                elapsed_ms=duration,
-                input_tokens=tokens,
-                output_tokens=0,
-                succeeded=succeeded,
-            )
-        )
-
-    def updates(self) -> InvestmentUpdates:
-        return {"events": self.events, "model_calls": self.model_calls, "errors": self.errors}
-
-
-def elapsed_ms(started: float) -> int:
-    return round((perf_counter() - started) * 1000)
+# Planner, Research, Bull, Bear and Judge each make one reasoning call.
+INITIAL_REASONING_CALLS = 5
+# A follow-up needs Research and Judge, plus one embedding call per query.
+FOLLOW_UP_REASONING_CALLS = 2
+MIN_FOLLOW_UP_CALLS = FOLLOW_UP_REASONING_CALLS + 1
 
 
 def candidates(
@@ -149,20 +75,91 @@ def candidates(
     ]
 
 
+def apply_claim_reviews(
+    valid_claims: list[CandidateClaim],
+    review: JudgeReview | None,
+    decisions: dict[str, ClaimDecision],
+    activity: NodeActivity,
+) -> None:
+    eligible = {claim.claim_id for claim in valid_claims}
+    counts = Counter(item.claim_id for item in review.reviews) if review else Counter()
+    reviews = (
+        {item.claim_id: item for item in review.reviews if counts[item.claim_id] == 1}
+        if review
+        else {}
+    )
+    if review is not None and (counts.keys() != eligible or any(n != 1 for n in counts.values())):
+        activity.fail("The Judge did not return exactly one assessment per eligible claim.")
+    for claim in valid_claims:
+        decisions[claim.claim_id] = decide(claim, reviews.get(claim.claim_id))
+
+
+def add_follow_up_questions(
+    review: JudgeReview,
+    gaps: list[EvidenceGap],
+    retrieval: list[RetrievalTrace],
+    all_claims: list[CandidateClaim],
+    capacity: int,
+    activity: NodeActivity,
+) -> None:
+    seen = {query_key(trace.query) for trace in retrieval}
+    gap_questions = {query_key(gap.question) for gap in gaps}
+    known_claim_ids = {claim.claim_id for claim in all_claims}
+    for item in review.follow_ups:
+        question = query_key(item.question)
+        if question in gap_questions:
+            continue
+        gap_questions.add(question)
+        query = query_key(item.query or "")
+        status: Literal["pending", "unresolved"] = "unresolved"
+        if not query:
+            note = "The Judge identified no actionable query for the indexed filing."
+        elif query in seen:
+            note = "This search was already used or assigned."
+        elif capacity <= 0:
+            note = "The remaining research budget does not allow this search."
+        else:
+            status = "pending"
+            note = "Selected for targeted follow-up research."
+            seen.add(query)
+            capacity -= 1
+        gap = EvidenceGap(
+            **item.model_dump(exclude={"affected_claim_ids"}),
+            affected_claim_ids=[key for key in item.affected_claim_ids if key in known_claim_ids],
+            gap_id=f"gap-{len(gaps) + 1}",
+            status=status,
+            note=note,
+        )
+        gaps.append(gap)
+        if status == "pending":
+            activity.emit("evidence_requested", f"{gap.gap_id}: {gap.question}"[:400])
+
+
+def follow_up_query_capacity(state: InvestmentState, limits: WorkflowLimits) -> int:
+    if state["research_rounds"] >= limits.max_research_rounds:
+        return 0
+    if len(state["evidence"]) >= limits.max_chunks:
+        return 0
+    # The current Judge call has not yet been recorded.
+    calls_after_judge = len(state["model_calls"]) + 1
+    available_embeddings = limits.max_model_calls - calls_after_judge - FOLLOW_UP_REASONING_CALLS
+    remaining_queries = limits.max_queries - len(state["retrieval"])
+    return max(0, min(2, remaining_queries, available_embeddings))
+
+
 def build_investment_graph(
     reasoner: Reasoner, store: FilingStore, *, limits: WorkflowLimits | None = None
 ) -> CompiledStateGraph:
     limits = limits or WorkflowLimits()
-    initial_queries = min(4, limits.max_queries, limits.max_model_calls - 5)
+    initial_queries = min(4, limits.max_queries, limits.max_model_calls - INITIAL_REASONING_CALLS)
 
     def planner(state: InvestmentInput) -> InvestmentUpdates:
         started_at = perf_counter()
         activity = NodeActivity(uuid4().hex, "planner")
         activity.emit("workflow_started", "Started investment analysis.")
         activity.emit("agent_started", "Planning prioritized SEC research.")
-        plan = activity.ask(
-            reasoner, ResearchPlan, planner_messages(state["request"], initial_queries)
-        )
+        messages = planner_messages(state["request"], initial_queries)
+        plan = activity.ask(reasoner, ResearchPlan, messages)
         updates: InvestmentUpdates = {"run_id": activity.run_id, "started_at": started_at}
         if plan is not None:
             try:
@@ -183,21 +180,23 @@ def build_investment_graph(
         activity.emit("agent_started", f"Started SEC research round {round_number}.")
         prior = state.get("evidence", [])
         prior_ids = {excerpt.source_id for excerpt in prior}
+        assignments: Sequence[ResearchTask | EvidenceGap]
         if follow_up:
             gaps = [gap for gap in state["gaps"] if gap.status == "pending"]
-            questions = [gap.model_dump(mode="json") for gap in gaps]
+            assignments = gaps
             queries = [gap.query for gap in gaps if gap.query is not None]
             chunk_limit = limits.max_chunks - len(prior)
         else:
             tasks = state["plan"].tasks
-            questions = [task.model_dump(mode="json") for task in tasks]
+            assignments = tasks
             queries = [task.query for task in tasks]
             # Leave room for distinct follow-up excerpts when the budgets permit another round.
             reserve = 0
             if (
                 limits.max_research_rounds == 2
                 and len(queries) < limits.max_queries
-                and 5 + len(queries) + 3 <= limits.max_model_calls
+                and INITIAL_REASONING_CALLS + len(queries) + MIN_FOLLOW_UP_CALLS
+                <= limits.max_model_calls
             ):
                 reserve = min(2, limits.max_chunks - min(limits.max_chunks, len(queries)))
             chunk_limit = limits.max_chunks - reserve
@@ -230,15 +229,10 @@ def build_investment_graph(
         ]
         claims = list(state.get("research_claims", []))
         if new_evidence:
-            findings = activity.ask(
-                reasoner,
-                ResearchFindings,
-                investment_research_messages(
-                    request=state["request"].model_dump(mode="json"),
-                    assignments=questions,
-                    evidence=[excerpt.model_dump(mode="json") for excerpt in new_evidence],
-                ),
+            messages = investment_research_messages(
+                request=state["request"], assignments=assignments, evidence=new_evidence
             )
+            findings = activity.ask(reasoner, ResearchFindings, messages)
             if findings is not None:
                 sources = {excerpt.source_id: excerpt for excerpt in new_evidence}
                 claims += candidates(
@@ -267,19 +261,13 @@ def build_investment_graph(
         ids = [excerpt.source_id for excerpt in evidence]
         activity.emit("agent_started", f"Evaluating the {agent} case.", ids)
         build_messages = bull_messages if agent == "bull" else bear_messages
-        arguments = activity.ask(
-            reasoner,
-            Arguments,
-            build_messages(
-                request=state["request"].model_dump(mode="json"),
-                research=[
-                    claim.model_dump(mode="json")
-                    for claim in state["research_claims"]
-                    if invalid_citation(claim, sources) is None
-                ],
-                evidence=[excerpt.model_dump(mode="json") for excerpt in evidence],
-            ),
+        research_claims = [
+            claim for claim in state["research_claims"] if invalid_citation(claim, sources) is None
+        ]
+        messages = build_messages(
+            request=state["request"], research=research_claims, evidence=evidence
         )
+        arguments = activity.ask(reasoner, Arguments, messages)
         if arguments is None:
             return activity.updates()
         claims = candidates(arguments.arguments, agent, "argument", 1, sources)
@@ -321,49 +309,23 @@ def build_investment_graph(
                 decisions[claim.claim_id] = decision
             else:
                 valid_claims.append(claim)
-        # Reserve two reasoning calls for follow-up Research and Judge, plus one per new query.
-        capacity = min(
-            2,
-            limits.max_queries - len(state["retrieval"]),
-            limits.max_model_calls - len(state["model_calls"]) - 3,
-        )
-        if round_number >= limits.max_research_rounds or len(sources) >= limits.max_chunks:
-            capacity = 0
+        capacity = follow_up_query_capacity(state, limits)
         review_ids = (
             new_ids | {key for claim in valid_claims for key in claim.source_ids}
             if round_number == 2
             else sources.keys()
         )
-        review = activity.ask(
-            reasoner,
-            JudgeReview,
-            judge_messages(
-                request=state["request"].model_dump(mode="json"),
-                claims=[claim.model_dump(mode="json") for claim in valid_claims],
-                evidence=[
-                    excerpt.model_dump(mode="json")
-                    for key, excerpt in sources.items()
-                    if key in review_ids
-                ],
-                follow_up_capacity=max(0, capacity),
-                searched_queries=[trace.query for trace in state["retrieval"]],
-                prior_gaps=[gap.model_dump(mode="json") for gap in pending],
-                new_source_ids=sorted(new_ids),
-            ),
+        messages = judge_messages(
+            request=state["request"],
+            claims=valid_claims,
+            evidence=[excerpt for key, excerpt in sources.items() if key in review_ids],
+            follow_up_capacity=capacity,
+            searched_queries=[trace.query for trace in state["retrieval"]],
+            prior_gaps=pending,
+            new_source_ids=sorted(new_ids),
         )
-        eligible = {claim.claim_id for claim in valid_claims}
-        counts = Counter(item.claim_id for item in review.reviews) if review else Counter()
-        reviews = (
-            {item.claim_id: item for item in review.reviews if counts[item.claim_id] == 1}
-            if review
-            else {}
-        )
-        if review is not None and (
-            counts.keys() != eligible or any(n != 1 for n in counts.values())
-        ):
-            activity.fail("The Judge did not return exactly one assessment per eligible claim.")
-        for claim in valid_claims:
-            decisions[claim.claim_id] = decide(claim, reviews.get(claim.claim_id))
+        review = activity.ask(reasoner, JudgeReview, messages)
+        apply_claim_reviews(valid_claims, review, decisions, activity)
         for claim in claims:
             decision = decisions[claim.claim_id]
             if decision.status in {"accepted", "rejected"}:
@@ -386,39 +348,9 @@ def build_investment_graph(
                 else gap
                 for gap in gaps
             ]
-            seen = {query_key(trace.query) for trace in state["retrieval"]}
-            gap_questions = {query_key(gap.question) for gap in gaps}
-            known_claim_ids = {claim.claim_id for claim in all_claims}
-            for item in review.follow_ups:
-                question = query_key(item.question)
-                if question in gap_questions:
-                    continue
-                gap_questions.add(question)
-                query = query_key(item.query or "")
-                status: Literal["pending", "unresolved"] = "unresolved"
-                if not query:
-                    note = "The Judge identified no actionable query for the indexed filing."
-                elif query in seen:
-                    note = "This search was already used or assigned."
-                elif capacity <= 0:
-                    note = "The remaining research budget does not allow this search."
-                else:
-                    status = "pending"
-                    note = "Selected for targeted follow-up research."
-                    seen.add(query)
-                    capacity -= 1
-                gap = EvidenceGap(
-                    **item.model_dump(exclude={"affected_claim_ids"}),
-                    affected_claim_ids=[
-                        key for key in item.affected_claim_ids if key in known_claim_ids
-                    ],
-                    gap_id=f"gap-{len(gaps) + 1}",
-                    status=status,
-                    note=note,
-                )
-                gaps.append(gap)
-                if status == "pending":
-                    activity.emit("evidence_requested", f"{gap.gap_id}: {gap.question}"[:400])
+            add_follow_up_questions(
+                review, gaps, state["retrieval"], all_claims, capacity, activity
+            )
             activity.emit("agent_completed", f"Assessed {len(claims)} claims.")
         return {"decisions": decisions, "gaps": gaps, **activity.updates()}
 

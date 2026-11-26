@@ -13,10 +13,20 @@ from agentops_lab.models.workflow import (
     EvidenceGap,
     EvidenceQuote,
     GapResolution,
+    InvestmentRequest,
 )
 
 
-def judge_messages(**payload: object) -> list[BaseMessage]:
+def judge_messages(
+    *,
+    request: InvestmentRequest,
+    claims: list[CandidateClaim],
+    evidence: list[DocumentExcerpt],
+    follow_up_capacity: int,
+    searched_queries: list[str],
+    prior_gaps: list[EvidenceGap],
+    new_source_ids: list[str],
+) -> list[BaseMessage]:
     return agent_messages(
         f"""Review every supplied claim ID once. Compare the complete claim against its cited
 passages in context, including figures, periods, entities, assumptions, and the direction of
@@ -38,7 +48,13 @@ mark a claim supported only when its own citations support it. Return an empty r
 list on the first pass. Use resolutions to update prior gaps without listing them again.
 Provide only brief, public-facing rationales.
 {EVIDENCE_RULES}""",
-        **payload,
+        request=request.model_dump(mode="json"),
+        claims=[item.model_dump(mode="json") for item in claims],
+        evidence=[item.model_dump(mode="json") for item in evidence],
+        follow_up_capacity=follow_up_capacity,
+        searched_queries=searched_queries,
+        prior_gaps=[item.model_dump(mode="json") for item in prior_gaps],
+        new_source_ids=new_source_ids,
     )
 
 
